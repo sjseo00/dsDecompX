@@ -1,0 +1,6 @@
+build*/
+benchmark*/
+example*/
+test*/
+obj/
+bin/

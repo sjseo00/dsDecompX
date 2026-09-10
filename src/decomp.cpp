@@ -60,7 +60,7 @@ HaloExchangeHandle& HaloExchangeHandle::operator=(HaloExchangeHandle&& other) no
 
 Decomposition::~Decomposition() {
     if (impl_ && impl_->operation_active) std::terminate();
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     if (impl_) {
         if (impl_->nvshmem_halo_receive)
             impl_->backend->free_symmetric(impl_->nvshmem_halo_receive);
@@ -134,7 +134,7 @@ bool Decomposition::halo_plan_valid() const noexcept {
 
 std::size_t Decomposition::total_received_halo_particles() const noexcept {
     std::size_t total = 0;
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     if (!impl_->device_halo_results.empty()) {
         for (const auto& buffer : impl_->device_halo_results) total+=buffer.count;
         return total;
@@ -170,7 +170,7 @@ Decomposition::migrated_owned_particles() const noexcept {
 
 DeviceParticleBuffer
 Decomposition::migrated_owned_device_particles() const noexcept {
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     return impl_->device_migration_result;
 #else
     return {};
@@ -194,11 +194,11 @@ const HaloExchangeTimings& Decomposition::last_halo_timings() const noexcept {
 
 void Decomposition::set_performance_counters_enabled(
     bool enabled, bool neighbor_detail) noexcept {
-#if DSDECOMP_ENABLE_PERF_COUNTERS
+#if ENABLE_PERF_COUNTERS
     if (enabled && !impl_->perf_enabled) {
         impl_->backend_reallocation_baseline =
             impl_->backend->buffer_reallocations();
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
         impl_->cuda_reallocation_baseline = impl_->cuda_execution
             ? impl_->cuda_execution->reallocations() : 0;
 #endif
@@ -212,7 +212,7 @@ void Decomposition::set_performance_counters_enabled(
 }
 
 PerfStats Decomposition::get_stats() const {
-#if DSDECOMP_ENABLE_PERF_COUNTERS
+#if ENABLE_PERF_COUNTERS
     PerfStats result = impl_->perf_stats;
     const std::uint64_t backend_reallocations =
         impl_->backend->buffer_reallocations();
@@ -223,7 +223,7 @@ PerfStats Decomposition::get_stats() const {
     result.peak_communication_buffer_capacity = std::max(
         result.peak_communication_buffer_capacity,
         impl_->backend->peak_buffer_capacity());
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     if (impl_->cuda_execution) {
         const auto reallocations=impl_->cuda_execution->reallocations();
         if (reallocations>=impl_->cuda_reallocation_baseline)
@@ -241,7 +241,7 @@ PerfStats Decomposition::get_stats() const {
 }
 
 PerfStats Decomposition::get_global_stats() const {
-#if DSDECOMP_ENABLE_PERF_COUNTERS
+#if ENABLE_PERF_COUNTERS
     return impl_->backend->aggregate_stats(get_stats());
 #else
     return {};
@@ -249,11 +249,11 @@ PerfStats Decomposition::get_global_stats() const {
 }
 
 void Decomposition::reset_stats() noexcept {
-#if DSDECOMP_ENABLE_PERF_COUNTERS
+#if ENABLE_PERF_COUNTERS
     impl_->perf_stats = {};
     impl_->backend_reallocation_baseline =
         impl_->backend->buffer_reallocations();
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     impl_->cuda_reallocation_baseline = impl_->cuda_execution
         ? impl_->cuda_execution->reallocations() : 0;
 #endif

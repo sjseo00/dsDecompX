@@ -9,7 +9,7 @@
 #include <cstddef>
 #include <string>
 #include <vector>
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
 #include "cuda/execution.hpp"
 #endif
 
@@ -54,7 +54,7 @@ struct Decomposition::Impl {
     std::vector<std::size_t> migration_destination;
     std::vector<std::size_t> migration_counts;
 
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     std::unique_ptr<cuda::ExecutionState> cuda_execution;
     std::vector<unsigned int> device_halo_send_counts;
     std::vector<unsigned int> device_halo_receive_counts;
@@ -80,7 +80,7 @@ struct Decomposition::Impl {
     bool neighbor_detail_enabled = false;
     PerfStats perf_stats{};
     std::uint64_t backend_reallocation_baseline = 0;
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     std::uint64_t cuda_reallocation_baseline = 0;
 #endif
     HaloExchangeTimings halo_timings{};

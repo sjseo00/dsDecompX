@@ -11,7 +11,7 @@
 #include <chrono>
 #include <numeric>
 #include <unordered_set>
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
 #include "cuda/execution.hpp"
 #include "cuda/kernels.hpp"
 #include "cuda/cuda_error.hpp"
@@ -22,7 +22,7 @@ namespace dsdecomp {
 
 void Decomposition::unpack_migrated_device_particles(
     ParticleView destination, ExecutionStream stream) {
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     if (!stream) throw std::invalid_argument(
         "dsDecomp: device migration unpack requires an explicit stream");
     if (destination.memory_space!=MemorySpace::CudaDevice &&
@@ -140,7 +140,7 @@ MigrationResult Decomposition::migrate_particles(
         throw std::logic_error("dsDecomp: migration cannot overlap an active halo operation");
     }
     if (owned_particles.memory_space != MemorySpace::Host) {
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
         impl_->migrated_owned.clear();
         if (owned_particles.field_count!=0) {
             throw std::runtime_error(
@@ -244,7 +244,7 @@ MigrationResult Decomposition::migrate_particles(
                     impl_->backend->allocate_symmetric_zeroed(
                         rank_count,sizeof(std::uint64_t)));
                 impl_->nvshmem_migration_slot_capacity=symmetric_stride;
-#if DSDECOMP_ENABLE_PERF_COUNTERS
+#if ENABLE_PERF_COUNTERS
                 if (impl_->perf_enabled) ++impl_->perf_stats.buffer_reallocations;
 #endif
             }
@@ -328,7 +328,7 @@ MigrationResult Decomposition::migrate_particles(
         result.received_count=receive_total;
         result.new_owned_count=new_count;
         result.ownership_changed=result.sent_count||result.received_count;
-#if DSDECOMP_ENABLE_PERF_COUNTERS
+#if ENABLE_PERF_COUNTERS
         if (impl_->perf_enabled) {
             ++impl_->perf_stats.migration_calls;
             impl_->perf_stats.bytes_sent+=result.sent_count*sizeof(ParticleRecord);
@@ -347,11 +347,11 @@ MigrationResult Decomposition::migrate_particles(
 #else
         (void)stream;
         throw std::invalid_argument(
-            "dsDecomp: CUDA migration requires DSDECOMP_ENABLE_CUDA");
+            "dsDecomp: CUDA migration requires ENABLE_CUDA");
 #endif
     }
 
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     impl_->device_migration_result={};
 #endif
 
@@ -482,7 +482,7 @@ MigrationResult Decomposition::migrate_particles(
     result.new_owned_count = impl_->migrated_owned.size();
     result.ownership_changed = result.sent_count != 0 || result.received_count != 0;
 
-#if DSDECOMP_ENABLE_PERF_COUNTERS
+#if ENABLE_PERF_COUNTERS
     if (impl_->perf_enabled) {
         ++impl_->perf_stats.migration_calls;
         impl_->perf_stats.bytes_sent += result.sent_count * sizeof(ParticleRecord);

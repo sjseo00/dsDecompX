@@ -6,35 +6,20 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-option(DSDECOMP_BUILD_TESTS "Build dsDecomp tests" OFF)
-option(DSDECOMP_RUN_GPU_TESTS "Register GPU/MPI tests with CTest" OFF)
-option(DSDECOMP_ENABLE_PERF_COUNTERS "Compile performance counters" ON)
+option(BUILD_TESTS "Build dsDecomp tests" OFF)
+option(BUILD_EXAMPLES "Build dsDecomp examples" OFF)
+option(BUILD_BENCHMARKS "Build the dsDecomp benchmark" OFF)
+option(RUN_GPU_TESTS "Register GPU/MPI tests with CTest" OFF)
+option(ENABLE_PERF_COUNTERS "Compile performance counters" ON)
 option(ENABLE_CUDA "Build the CUDA execution layer" OFF)
 option(ENABLE_NCCL "Build the NCCL data-plane backend" OFF)
 option(ENABLE_NVSHMEM "Build the NVSHMEM data-plane backend" OFF)
-option(DSDECOMP_AUTO_DETECT_GPU_BACKENDS
+option(AUTO_DETECT_GPU_BACKENDS
     "Automatically include installed NCCL/NVSHMEM backends in CUDA builds" ON)
-
-# Backward compatibility: accept legacy DSDECOMP_ENABLE_* cache options.
-if(DEFINED DSDECOMP_ENABLE_CUDA)
-    set(ENABLE_CUDA ${DSDECOMP_ENABLE_CUDA})
-endif()
-if(DEFINED DSDECOMP_ENABLE_NCCL)
-    set(ENABLE_NCCL ${DSDECOMP_ENABLE_NCCL})
-endif()
-if(DEFINED DSDECOMP_ENABLE_NVSHMEM)
-    set(ENABLE_NVSHMEM ${DSDECOMP_ENABLE_NVSHMEM})
-endif()
-
-# Mirror canonical options for subdirectories and package config generation.
-set(DSDECOMP_ENABLE_CUDA ${ENABLE_CUDA})
-set(DSDECOMP_ENABLE_NCCL ${ENABLE_NCCL})
-set(DSDECOMP_ENABLE_NVSHMEM ${ENABLE_NVSHMEM})
 
 if(ENABLE_NCCL OR ENABLE_NVSHMEM)
     set(ENABLE_CUDA ON CACHE BOOL
         "Build the CUDA execution layer" FORCE)
-    set(DSDECOMP_ENABLE_CUDA ON)
 endif()
 
 find_package(MPI REQUIRED COMPONENTS CXX)
@@ -49,12 +34,11 @@ endif()
 if(ENABLE_CUDA)
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
-    if(DSDECOMP_AUTO_DETECT_GPU_BACKENDS)
+    if(AUTO_DETECT_GPU_BACKENDS)
         if(NOT ENABLE_NVSHMEM)
             find_package(NVSHMEM QUIET)
             if(NVSHMEM_FOUND)
                 set(ENABLE_NVSHMEM ON)
-                set(DSDECOMP_ENABLE_NVSHMEM ON)
                 message(STATUS "dsDecomp: automatically enabled NVSHMEM backend")
             endif()
         endif()
@@ -62,7 +46,6 @@ if(ENABLE_CUDA)
             find_package(NCCL QUIET)
             if(NCCL_FOUND)
                 set(ENABLE_NCCL ON)
-                set(DSDECOMP_ENABLE_NCCL ON)
                 message(STATUS "dsDecomp: automatically enabled NCCL backend")
             endif()
         endif()
@@ -84,10 +67,10 @@ add_library(dsdecomp::dsdecomp ALIAS dsdecomp)
 
 target_compile_features(dsdecomp PUBLIC cxx_std_17)
 target_compile_definitions(dsdecomp PUBLIC
-    DSDECOMP_ENABLE_PERF_COUNTERS=$<BOOL:${DSDECOMP_ENABLE_PERF_COUNTERS}>
-    DSDECOMP_HAS_CUDA=$<BOOL:${ENABLE_CUDA}>
-    DSDECOMP_HAS_NCCL=$<BOOL:${ENABLE_NCCL}>
-    DSDECOMP_HAS_NVSHMEM=$<BOOL:${ENABLE_NVSHMEM}>)
+    ENABLE_PERF_COUNTERS=$<BOOL:${ENABLE_PERF_COUNTERS}>
+    HAS_CUDA=$<BOOL:${ENABLE_CUDA}>
+    HAS_NCCL=$<BOOL:${ENABLE_NCCL}>
+    HAS_NVSHMEM=$<BOOL:${ENABLE_NVSHMEM}>)
 
 target_include_directories(dsdecomp
     PUBLIC
@@ -143,9 +126,13 @@ set_target_properties(dsdecomp PROPERTIES
     SOVERSION ${PROJECT_VERSION_MAJOR}
     EXPORT_NAME dsdecomp)
 
-if(DSDECOMP_BUILD_TESTS)
+if(BUILD_TESTS)
     include(CTest)
     add_subdirectory(tests)
+endif()
+
+if(BUILD_EXAMPLES OR BUILD_BENCHMARKS)
+    add_subdirectory(examples)
 endif()
 
 install(TARGETS dsdecomp

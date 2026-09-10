@@ -22,7 +22,7 @@ struct Config {
     HaloConfig halo;
     GridPolicy grid_policy = GridPolicy::Manual;
     TopologyInfo topology_info;
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     ExecutionMode execution = ExecutionMode::Cuda;
 #else
     ExecutionMode execution = ExecutionMode::Host;

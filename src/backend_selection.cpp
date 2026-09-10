@@ -26,7 +26,7 @@ BackendSelection parse_backend_selection(std::string_view value) {
     if (normalized == "nccl") return BackendSelection::Nccl;
     if (normalized == "nvshmem") return BackendSelection::Nvshmem;
     throw std::invalid_argument(
-        "dsDecomp: DSDECOMP_BACKEND must be auto, mpi, nccl, or nvshmem");
+        "dsDecomp: BACKEND must be auto, mpi, nccl, or nvshmem");
 }
 
 bool backend_compiled(BackendSelection selection) noexcept {
@@ -35,13 +35,13 @@ bool backend_compiled(BackendSelection selection) noexcept {
     case BackendSelection::Mpi:
         return true;
     case BackendSelection::Nccl:
-#if DSDECOMP_HAS_NCCL
+#if HAS_NCCL
         return true;
 #else
         return false;
 #endif
     case BackendSelection::Nvshmem:
-#if DSDECOMP_HAS_NVSHMEM
+#if HAS_NVSHMEM
         return true;
 #else
         return false;

@@ -3,9 +3,9 @@
 include(CMakeFindDependencyMacro)
 find_dependency(MPI REQUIRED COMPONENTS CXX)
 
-set(dsDecomp_WITH_CUDA @DSDECOMP_ENABLE_CUDA@)
-set(dsDecomp_WITH_NCCL @DSDECOMP_ENABLE_NCCL@)
-set(dsDecomp_WITH_NVSHMEM @DSDECOMP_ENABLE_NVSHMEM@)
+set(dsDecomp_WITH_CUDA @ENABLE_CUDA@)
+set(dsDecomp_WITH_NCCL @ENABLE_NCCL@)
+set(dsDecomp_WITH_NVSHMEM @ENABLE_NVSHMEM@)
 if(dsDecomp_WITH_CUDA)
     find_dependency(CUDAToolkit REQUIRED)
 endif()

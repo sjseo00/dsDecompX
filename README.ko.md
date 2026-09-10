@@ -272,6 +272,29 @@ auto result = decomp.exchange_halo(
 | `layout_changed` | ghost 입자 수나 순서가 이전 호출과 달라졌는지 알려줍니다. |
 | `storage_reallocated` | Particle 정보를 담을 메모리가 부족해 더 큰 메모리를 만들었는지 알려줍니다. |
 
+#### 구현 위치(함수명)
+
+`exchange_halo()` 호출은 아래 함수 체인으로 처리됩니다.
+
+- 사용자 API 진입: `dsdecomp::Decomp::exchange_halo` (`src/runtime.cpp`)
+- 코어 시작/완료: `dsdecomp::Decomposition::begin_halo_exchange`, `dsdecomp::Decomposition::end_halo_exchange` (`src/halo.cpp`)
+- Host 경계 선별/패킹: `dsdecomp::Decomposition::rebuild_halo_plan`, `dsdecomp::Decomposition::refresh_halo_buffers` (`src/halo.cpp`)
+- Host 이웃 레코드 교환: `dsdecomp::detail::MpiBackend::begin_exchange_records`, `dsdecomp::detail::MpiBackend::end_exchange_records` (`src/backends/mpi_backend.cpp`)
+- Device 경로 시작/완료: `dsdecomp::detail::Backend::begin_device_exchange`, `dsdecomp::detail::Backend::end_device_exchange` 구현체 (`src/backends/*`)
+
+backend별 `exchange_halo` 데이터 경로 함수는 다음과 같습니다.
+
+- MPI(Host): `MpiBackend::begin_exchange_records` / `MpiBackend::end_exchange_records`
+- CUDA-aware MPI 또는 staging MPI(Device): `MpiBackend::begin_device_exchange` / `MpiBackend::end_device_exchange`
+- NCCL(Device): `NcclBackend::begin_device_exchange` / `NcclBackend::end_device_exchange` (`src/backends/nccl/nccl_backend.cpp`)
+- NVSHMEM(Device): `NvshmemBackend::begin_device_exchange` / `NvshmemBackend::end_device_exchange` (`src/backends/nvshmem/nvshmem_backend.cpp`)
+
+`migrate()`와 `reverse_halo()`의 핵심 구현 함수명은 아래와 같습니다.
+
+- `migrate()`: `dsdecomp::Decomp::migrate` (`src/runtime.cpp`), `dsdecomp::Decomposition::migrate_particles` (`src/migration.cpp`)
+- `reverse_halo()`: `dsdecomp::Decomp::reverse_halo` (`src/runtime.cpp`), `dsdecomp::Decomposition::reverse_halo` (`src/halo.cpp`)
+- Host force 환원 경로: `dsdecomp::Decomposition::reverse_exchange` (`src/halo.cpp`)
+
 ### `reverse_halo()`
 
 ```cpp
@@ -359,7 +382,7 @@ CUDA를 포함해 빌드한 라이브러리는 `Cuda`, CPU 전용 라이브러�
 | 설정 | 값을 넣으면 바뀌는 동작 |
 |---|---|
 | `advanced.selection` | `Auto` 대신 MPI, NCCL 또는 NVSHMEM을 강제로 사용합니다. 초기화할 수 없으면 다른 방식으로 바꾸지 않고 오류를 냅니다. |
-| `advanced.read_environment` | `DSDECOMP_BACKEND` 환경변수를 읽을지 정합니다. |
+| `advanced.read_environment` | `BACKEND` 환경변수를 읽을지 정합니다. |
 | `advanced.allow_host_staging` | CUDA-aware MPI를 쓸 수 없을 때 GPU 데이터를 CPU pinned memory로 옮겨 통신할 수 있게 합니다. |
 
 ## `Topology`: 현재 rank의 배치 정보

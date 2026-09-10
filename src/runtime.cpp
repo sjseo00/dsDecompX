@@ -2,10 +2,10 @@
 
 #include "dsdecomp.hpp"
 #include "backends/mpi.hpp"
-#if DSDECOMP_HAS_NCCL
+#if HAS_NCCL
 #include "backends/nccl.hpp"
 #endif
-#if DSDECOMP_HAS_NVSHMEM
+#if HAS_NVSHMEM
 #include "backends/nvshmem.hpp"
 #endif
 
@@ -17,7 +17,7 @@
 #include <utility>
 #include <vector>
 
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
 #include <cuda_runtime_api.h>
 #endif
 
@@ -29,7 +29,7 @@ BackendSelection requested_backend(const Config& config) {
         return config.advanced.selection;
     }
     if (!config.advanced.read_environment) return BackendSelection::Auto;
-    const char* value = std::getenv("DSDECOMP_BACKEND");
+    const char* value = std::getenv("BACKEND");
     return value && *value ? parse_backend_selection(value)
                            : BackendSelection::Auto;
 }
@@ -41,7 +41,7 @@ Backend create_selected_backend(MPI_Comm communicator, const Config& config) {
             throw std::invalid_argument(
                 "dsDecomp: NCCL backend requires ExecutionMode::Cuda");
         }
-#if DSDECOMP_HAS_NCCL
+#if HAS_NCCL
         return nccl::make_backend(communicator);
 #else
         throw std::runtime_error(
@@ -53,7 +53,7 @@ Backend create_selected_backend(MPI_Comm communicator, const Config& config) {
             throw std::invalid_argument(
                 "dsDecomp: NVSHMEM backend requires ExecutionMode::Cuda");
         }
-#if DSDECOMP_HAS_NVSHMEM
+#if HAS_NVSHMEM
         return nvshmem::make_backend(communicator);
 #else
         throw std::runtime_error(
@@ -66,10 +66,10 @@ Backend create_selected_backend(MPI_Comm communicator, const Config& config) {
         options.allow_host_staging = config.advanced.allow_host_staging;
         return mpi::make_backend(communicator, options);
     }
-#if DSDECOMP_HAS_NVSHMEM
+#if HAS_NVSHMEM
     try { return nvshmem::make_backend(communicator); } catch (...) {}
 #endif
-#if DSDECOMP_HAS_NCCL
+#if HAS_NCCL
     try { return nccl::make_backend(communicator); } catch (...) {}
 #endif
     mpi::BackendOptions options;
@@ -126,7 +126,7 @@ void validate_collective_field_schema(MPI_Comm communicator,
     }
 }
 
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
 void cuda_require(cudaError_t status, const char* operation) {
     if (status != cudaSuccess) {
         throw std::runtime_error(std::string("dsDecomp: ") + operation +
@@ -243,7 +243,7 @@ ParticleInfo& ParticleInfo::operator=(ParticleInfo&& other) noexcept {
 
 void ParticleInfo::release_device_memory() noexcept {
     if (!owns_device_memory_) return;
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     free_cuda_particles(storage_);
 #endif
     owns_device_memory_ = false;
@@ -252,7 +252,7 @@ void ParticleInfo::release_device_memory() noexcept {
 ParticleInfo ParticleInfo::allocate(MemorySpace memory_space,
                                     std::size_t owned) {
     if (memory_space == MemorySpace::Host) return ParticleInfo(owned);
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     ParticleInfo result;
     result.external_ = true;
     result.owns_device_memory_ = true;
@@ -467,7 +467,7 @@ StorageResizeResult ParticleInfo::resize_storage(
     }
     if (required <= storage_.count) return {storage_, false};
     if (owns_device_memory_) {
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
         const std::size_t grown = std::max(required,
             std::max<std::size_t>(64, storage_.count + storage_.count/2));
         ParticleView replacement =
@@ -525,10 +525,10 @@ Decomp::Decomp(MPI_Comm communicator, Config config)
     if (communicator == MPI_COMM_NULL) {
         throw std::invalid_argument("dsDecomp: MPI communicator is null");
     }
-#if !DSDECOMP_HAS_CUDA
+#if !HAS_CUDA
     if (config.execution == ExecutionMode::Cuda) {
         throw std::runtime_error(
-            "dsDecomp: CUDA execution requested but DSDECOMP_ENABLE_CUDA is OFF");
+            "dsDecomp: CUDA execution requested but ENABLE_CUDA is OFF");
     }
 #endif
     if (config.grid_policy == GridPolicy::TopologyAware &&

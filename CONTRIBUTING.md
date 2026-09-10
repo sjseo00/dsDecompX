@@ -3,7 +3,7 @@
 Build with warnings and tests enabled:
 
 ```sh
-cmake -S . -B build -DDSDECOMP_BUILD_TESTS=ON
+cmake -S . -B build -DBUILD_TESTS=ON
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```

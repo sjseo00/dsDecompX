@@ -34,6 +34,24 @@ cmake --build build -j
 
 For a CUDA build, dsDecomp automatically detects installed NCCL and NVSHMEM libraries and includes the available backends.
 
+Build options use the same unprefixed names in standalone and parent-project
+builds:
+
+| Option | Default | Purpose |
+|---|---:|---|
+| `ENABLE_CUDA` | `OFF` | Build the CUDA execution layer |
+| `ENABLE_NCCL` | `OFF` | Build the NCCL backend; also enables CUDA |
+| `ENABLE_NVSHMEM` | `OFF` | Build the NVSHMEM backend; also enables CUDA |
+| `AUTO_DETECT_GPU_BACKENDS` | `ON` | Detect installed NCCL/NVSHMEM libraries in CUDA builds |
+| `ENABLE_PERF_COUNTERS` | `ON` | Compile performance counters |
+| `BUILD_TESTS` | `OFF` | Build CPU/MPI unit and regression tests |
+| `RUN_GPU_TESTS` | `OFF` | Register CUDA backend tests with CTest |
+| `BUILD_EXAMPLES` | `OFF` | Build the standalone examples |
+| `BUILD_BENCHMARKS` | `OFF` | Build the scaling benchmark |
+
+Runtime overrides are `BACKEND=auto|mpi|nccl|nvshmem` and
+`CUDA_AWARE_MPI=0|1`.
+
 For the standalone CPU/GPU strong- and weak-scaling benchmark, see [examples/benchmark/README.md](examples/benchmark/README.md).
 
 ```cmake
@@ -358,7 +376,7 @@ Normal users do not need to change these settings.
 | Setting | What changing it does |
 |---|---|
 | `advanced.selection` | Forces MPI, NCCL, or NVSHMEM instead of `Auto`. If initialization fails, it reports an error instead of selecting another method. |
-| `advanced.read_environment` | Controls whether `DSDECOMP_BACKEND` is read. |
+| `advanced.read_environment` | Controls whether `BACKEND` is read. |
 | `advanced.allow_host_staging` | Allows GPU data to be moved through pinned CPU memory when CUDA-aware MPI is unavailable. |
 
 ## `Topology`: placement information for the current rank

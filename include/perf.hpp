@@ -4,8 +4,8 @@
 #include <limits>
 #include <vector>
 
-#ifndef DSDECOMP_ENABLE_PERF_COUNTERS
-#define DSDECOMP_ENABLE_PERF_COUNTERS 1
+#ifndef ENABLE_PERF_COUNTERS
+#define ENABLE_PERF_COUNTERS 1
 #endif
 
 namespace dsdecomp {

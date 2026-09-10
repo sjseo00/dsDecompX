@@ -13,7 +13,7 @@
 #include <utility>
 #include <unordered_map>
 #include <vector>
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
 #include <cuda_runtime_api.h>
 #endif
 
@@ -68,7 +68,7 @@ public:
             options.cuda_aware != mpi::CudaAwareMode::Disabled && capability;
 
         create_particle_record_type();
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
         if (!cuda_aware_enabled_ && options_.allow_host_staging) {
             cuda_check(cudaEventCreateWithFlags(&device_copy_event_,
                                                 cudaEventDisableTiming),
@@ -190,7 +190,7 @@ public:
 
     bool supports_device_data_plane() const noexcept override {
         return cuda_aware_enabled_
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
             || options_.allow_host_staging
 #endif
             ;
@@ -226,7 +226,7 @@ public:
         active_consumer_stream_ = exchange.consumer_stream;
         active_device_staging_ = !cuda_aware_enabled_;
 
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
         if (active_device_staging_) {
             prepare_staging(active_device_transfers_);
             const cudaStream_t stream =
@@ -251,7 +251,7 @@ public:
 #else
         if (active_device_staging_) {
             throw std::runtime_error(
-                "dsDecomp MPI: host staging requires DSDECOMP_ENABLE_CUDA");
+                "dsDecomp MPI: host staging requires ENABLE_CUDA");
         }
 #endif
         exchange_active_ = true;
@@ -261,7 +261,7 @@ public:
             if (transfer.receive_bytes) {
                 MPI_Request request = MPI_REQUEST_NULL;
                 void* receive_pointer = transfer.receive_buffer;
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
                 if (active_device_staging_) receive_pointer = staging_[i].receive;
 #endif
                 MPI_Irecv(receive_pointer,
@@ -273,7 +273,7 @@ public:
             if (transfer.send_bytes) {
                 MPI_Request request = MPI_REQUEST_NULL;
                 void* send_pointer = const_cast<void*>(transfer.send_buffer);
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
                 if (active_device_staging_) send_pointer = staging_[i].send;
 #endif
                 MPI_Isend(send_pointer,
@@ -294,7 +294,7 @@ public:
                         MPI_STATUSES_IGNORE);
         }
         requests_.clear();
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
         if (active_device_staging_) {
             const cudaStream_t communication =
                 static_cast<cudaStream_t>(active_device_stream_);
@@ -719,7 +719,7 @@ private:
     MPI_Comm data_comm() const noexcept {
         return cart_ != MPI_COMM_NULL ? cart_ : world_;
     }
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     void cuda_check(cudaError_t status, const char* operation) const {
         if (status == cudaSuccess) return;
         throw std::runtime_error(
@@ -764,7 +764,7 @@ private:
     }
 
     bool detect_cuda_aware_mpi() const noexcept {
-        if (const char* override_value=std::getenv("DSDECOMP_CUDA_AWARE_MPI")) {
+        if (const char* override_value=std::getenv("CUDA_AWARE_MPI")) {
             const std::string value(override_value);
             if (value=="1" || value=="true" || value=="TRUE") return true;
             if (value=="0" || value=="false" || value=="FALSE") return false;
@@ -809,7 +809,7 @@ private:
     }
 
     void cleanup() noexcept {
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
         for (StagingSlot& slot : staging_) {
             if (slot.send) cudaFreeHost(slot.send);
             if (slot.receive) cudaFreeHost(slot.receive);
@@ -851,7 +851,7 @@ private:
     ExecutionStream active_device_stream_ = nullptr;
     ExecutionStream active_consumer_stream_ = nullptr;
     bool active_device_staging_ = false;
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     struct StagingSlot {
         void* send = nullptr;
         void* receive = nullptr;

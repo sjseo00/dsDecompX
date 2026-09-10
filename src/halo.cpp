@@ -8,7 +8,7 @@
 #include <cstring>
 #include <numeric>
 #include <unordered_set>
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
 #include "cuda/execution.hpp"
 #include "cuda/kernels.hpp"
 #include "cuda/cuda_error.hpp"
@@ -25,7 +25,7 @@ constexpr int kReverseDataTagBase = 78;
 constexpr int kDeviceCountTagBase = 104;
 constexpr int kDeviceDataTagBase = 136;
 
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
 int opposite_direction_slot(const Neighbor& neighbor) {
     const int dx=-neighbor.direction[0], dy=-neighbor.direction[1], dz=-neighbor.direction[2];
     const int raw=(dx+1)*9+(dy+1)*3+(dz+1);
@@ -250,7 +250,7 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
         throw std::logic_error("dsDecomp: an operation is already in flight");
     }
     impl_->operation_active = true;
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     if (owned_particles.memory_space == MemorySpace::Host)
         impl_->device_halo_results.clear();
 #endif
@@ -268,7 +268,7 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
     // self-images would duplicate interactions; match the established host
     // semantics for both host and CUDA views.
     if (impl_->topology.size() == 1) {
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
         impl_->device_halo_results.clear();
 #endif
         for (auto& buffer : impl_->halo_send_buffers) buffer.clear();
@@ -288,7 +288,7 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
     }
 
     if (owned_particles.memory_space != MemorySpace::Host) {
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
         if (owned_particles.field_count!=0) {
             impl_->operation_active=false;
             throw std::runtime_error(
@@ -415,7 +415,7 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
                             impl_->backend->allocate_symmetric_zeroed(
                                 26, sizeof(std::uint64_t)));
                     impl_->nvshmem_halo_slot_capacity = symmetric_stride;
-#if DSDECOMP_ENABLE_PERF_COUNTERS
+#if ENABLE_PERF_COUNTERS
                     if (impl_->perf_enabled) ++impl_->perf_stats.buffer_reallocations;
 #endif
                 }
@@ -493,7 +493,7 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
         impl_->operation_active = false;
         (void)stream;
         throw std::invalid_argument(
-            "dsDecomp: CUDA particle view requires DSDECOMP_ENABLE_CUDA");
+            "dsDecomp: CUDA particle view requires ENABLE_CUDA");
 #endif
     }
     if (impl_->halo_plan_valid) {
@@ -534,7 +534,7 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
 
 void Decomposition::end_halo_exchange(HaloExchangeHandle& handle,
                                       ExecutionStream stream) {
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     if (!stream && impl_->device_operation_active)
         stream = impl_->device_communication_stream;
 #endif
@@ -547,7 +547,7 @@ void Decomposition::end_halo_exchange(HaloExchangeHandle& handle,
     const bool timed = impl_->timing_enabled || impl_->perf_enabled;
     const auto wait_start = timed ? std::chrono::steady_clock::now()
                                   : std::chrono::steady_clock::time_point{};
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     if (impl_->device_operation_active) {
         detail::DeviceExchange exchange{
             &impl_->device_transfers, stream, stream, "halo"};
@@ -589,7 +589,7 @@ void Decomposition::end_halo_exchange(HaloExchangeHandle& handle,
 
     const auto unpack_start = timed ? std::chrono::steady_clock::now()
                                     : std::chrono::steady_clock::time_point{};
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     if (impl_->device_halo_results.empty())
 #endif
     {
@@ -606,13 +606,13 @@ void Decomposition::end_halo_exchange(HaloExchangeHandle& handle,
                                           impl_->exchange_start).count();
     }
     impl_->operation_active = false;
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     impl_->device_communication_stream = nullptr;
 #endif
     handle.active_ = false;
     handle.owner_ = nullptr;
 
-#if DSDECOMP_ENABLE_PERF_COUNTERS
+#if ENABLE_PERF_COUNTERS
     if (impl_->perf_enabled) {
         ++impl_->perf_stats.halo_calls;
         std::uint64_t sent = 0;
@@ -625,7 +625,7 @@ void Decomposition::end_halo_exchange(HaloExchangeHandle& handle,
             for (std::size_t n = 0; n < neighbors.size(); ++n)
                 impl_->perf_stats.neighbor_bytes[n].peer_rank = neighbors[n].rank;
         }
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
         if (!impl_->device_halo_results.empty()) {
             for (std::size_t n=0; n<impl_->device_halo_results.size(); ++n) {
                 const std::uint64_t send_bytes =
@@ -710,7 +710,7 @@ void Decomposition::unpack_halo_fields(ParticleView destination,
 
 const std::vector<DeviceHaloBuffer>&
 Decomposition::received_device_halos() const noexcept {
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     return impl_->device_halo_results;
 #else
     static const std::vector<DeviceHaloBuffer> empty;
@@ -721,7 +721,7 @@ Decomposition::received_device_halos() const noexcept {
 void Decomposition::unpack_device_halos(ParticleView destination,
                                         std::size_t destination_offset,
                                         ExecutionStream stream) {
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
     if (!stream) throw std::invalid_argument(
         "dsDecomp: device halo unpack requires an explicit stream");
     if (destination.memory_space != MemorySpace::CudaDevice &&
@@ -755,7 +755,7 @@ void Decomposition::reverse_halo(ParticleView particles,
     }
     if (particles.memory_space == MemorySpace::CudaDevice ||
         particles.memory_space == MemorySpace::CudaManaged) {
-#if DSDECOMP_HAS_CUDA
+#if HAS_CUDA
         if (!stream) {
             throw std::invalid_argument(
                 "dsDecomp: device reverse halo requires an explicit stream");

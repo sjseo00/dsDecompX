@@ -26,3 +26,26 @@ the `ParticleInfo` interface.
 NVLink/NVSwitch/NIC discovery is intentionally a separate future provider;
 callers may already inject a richer `TopologyInfo`. Discovery failure selects
 the Balanced grid heuristic and never fails initialization.
+
+## Call-path mapping
+
+`exchange_halo()` is handled by the following function chain:
+
+- User API entry point: `dsdecompx::Decomp::exchange_halo` (`src/runtime.cpp`)
+- Core start/finish: `dsdecompx::Decomposition::begin_halo_exchange`, `dsdecompx::Decomposition::end_halo_exchange` (`src/halo.cpp`)
+- Host boundary selection/packing: `dsdecompx::Decomposition::rebuild_halo_plan`, `dsdecompx::Decomposition::refresh_halo_buffers` (`src/halo.cpp`)
+- Host neighbor record exchange: `dsdecompx::detail::MpiBackend::begin_exchange_records`, `dsdecompx::detail::MpiBackend::end_exchange_records` (`src/backends/mpi_backend.cpp`)
+- Device path start/finish: `dsdecompx::detail::Backend::begin_device_exchange`, `dsdecompx::detail::Backend::end_device_exchange` implementations (`src/backends/*`)
+
+The per-backend `exchange_halo` data-path functions are:
+
+- MPI (host): `MpiBackend::begin_exchange_records` / `MpiBackend::end_exchange_records`
+- CUDA-aware or staging MPI (device): `MpiBackend::begin_device_exchange` / `MpiBackend::end_device_exchange`
+- NCCL (device): `NcclBackend::begin_device_exchange` / `NcclBackend::end_device_exchange` (`src/backends/nccl/nccl_backend.cpp`)
+- NVSHMEM (device): `NvshmemBackend::begin_device_exchange` / `NvshmemBackend::end_device_exchange` (`src/backends/nvshmem/nvshmem_backend.cpp`)
+
+The core implementation functions behind `migrate()` and `reverse_halo()` are:
+
+- `migrate()`: `dsdecompx::Decomp::migrate` (`src/runtime.cpp`), `dsdecompx::Decomposition::migrate_particles` (`src/migration.cpp`)
+- `reverse_halo()`: `dsdecompx::Decomp::reverse_halo` (`src/runtime.cpp`), `dsdecompx::Decomposition::reverse_halo` (`src/halo.cpp`)
+- Host force reduction path: `dsdecompx::Decomposition::reverse_exchange` (`src/halo.cpp`)

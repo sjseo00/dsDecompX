@@ -331,6 +331,12 @@ auto grid = dsdecompx::choose_process_grid(
 - `Balanced`: makes region sizes similar based on the x, y, and z lengths.
 - `TopologyAware`: also considers the cost of within-node and between-node communication.
 
+dsDecompX currently only performs uniform, orthogonal Cartesian decomposition:
+
+- Default `Manual`: leaves the grid shape to MPI's `MPI_Dims_create` by passing `dimensions={0,0,0}`.
+- `GRID_POLICY=balanced`: chooses `(px, py, pz)` from the box aspect ratio and surface-area-to-volume ratio.
+- `GRID_POLICY=topology`: adds within-node/between-node communication weights on top of the above criteria.
+
 ## Performance measurement functions
 
 ```cpp

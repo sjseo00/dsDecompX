@@ -472,6 +472,11 @@ decomp.reset_stats();
 
 아래 예제는 MPI 초기화와 `Decomp decomp(...)` 생성이 끝난 상태를 기준으로 합니다.
 
+현재 dsDecomp는 사실상 균일한 직교 Cartesian 분할만 합니다.
+- 기본값 Manual: dimensions={0,0,0}로 MPI의 MPI_Dims_create에 격자 모양을 맡김
+- GRID_POLICY=balanced: box 종횡비·표면적/부피 비로 (px,py,pz)를 선택
+- GRID_POLICY=topology: 위 기준에 노드 간/내 통신 가중치를 더해 격자 모양을 선택
+
 ### CPU 예제 1: Particle 정보(CPU 메모리)를 직접 만들기
 
 ```cpp

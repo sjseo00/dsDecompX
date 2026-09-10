@@ -1,8 +1,8 @@
-# dsDecomp 0.3
+# dsDecompX 0.3
 
 English | [한국어](README.ko.md)
 
-dsDecomp is a domain-decomposition and particle-communication library for
+dsDecompX is a domain-decomposition and particle-communication library for
 simulations in which multiple CPUs or GPUs divide the simulation space. It
 keeps MD convenience fields while supporting application-defined fields for
 DEM, SPH, PIC, and Lagrangian particle tracking. Normal users only need to
@@ -32,7 +32,7 @@ cmake -S . -B build -DENABLE_CUDA=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-For a CUDA build, dsDecomp automatically detects installed NCCL and NVSHMEM libraries and includes the available backends.
+For a CUDA build, dsDecompX automatically detects installed NCCL and NVSHMEM libraries and includes the available backends.
 
 Build options use the same unprefixed names in standalone and parent-project
 builds:
@@ -55,21 +55,21 @@ Runtime overrides are `BACKEND=auto|mpi|nccl|nvshmem` and
 For the standalone CPU/GPU strong- and weak-scaling benchmark, see [examples/benchmark/README.md](examples/benchmark/README.md).
 
 ```cmake
-find_package(dsDecomp 0.3 REQUIRED CONFIG)
-target_link_libraries(my_particles PRIVATE dsdecomp::dsdecomp)
+find_package(dsDecompX 0.3 REQUIRED CONFIG)
+target_link_libraries(my_particles PRIVATE dsdecompx::dsdecompx)
 ```
 
 ## Basic call order
 
 ```cpp
-dsdecomp::Config config;
+dsdecompx::Config config;
 config.domain.upper = {100.0, 100.0, 100.0};
 config.halo.width = cutoff + skin;
-config.execution = dsdecomp::ExecutionMode::Host; // or Cuda
+config.execution = dsdecompx::ExecutionMode::Host; // or Cuda
 
-dsdecomp::Decomp decomp(MPI_COMM_WORLD, config);
+dsdecompx::Decomp decomp(MPI_COMM_WORLD, config);
 constexpr std::size_t capacity = 2000;
-dsdecomp::ParticleInfo particles(1000);
+dsdecompx::ParticleInfo particles(1000);
 
 std::vector<double> temperature(capacity);
 std::vector<int> species(capacity);
@@ -86,7 +86,7 @@ decomp.exchange_halo(particles);
 decomp.reverse_halo(particles);
 // Or reduce an application-defined ghost contribution:
 decomp.reverse_exchange(
-    particles, {{"temperature", dsdecomp::ReduceOp::Sum}});
+    particles, {{"temperature", dsdecompx::ReduceOp::Sum}});
 ```
 
 - `migrate()` sends particles that left the local region to their new rank/GPU.
@@ -104,7 +104,7 @@ application data is registered with `add_field()`.
 ### Create Particle data (CPU memory)
 
 ```cpp
-dsdecomp::ParticleInfo particles(1000);
+dsdecompx::ParticleInfo particles(1000);
 
 particles.x[0] = 1.0;
 particles.y[0] = 2.0;
@@ -118,8 +118,8 @@ particles.global_id[0] = 0;
 ### Create Particle data (CUDA memory)
 
 ```cpp
-auto particles = dsdecomp::ParticleInfo::allocate(
-    dsdecomp::MemorySpace::CudaDevice, 1000);
+auto particles = dsdecompx::ParticleInfo::allocate(
+    dsdecompx::MemorySpace::CudaDevice, 1000);
 
 double* d_x = particles.x_data();
 double* d_y = particles.y_data();
@@ -131,8 +131,8 @@ double* d_z = particles.z_data();
 ### Use existing Particle data (CPU/CUDA memory)
 
 ```cpp
-auto particles = dsdecomp::ParticleInfo::external(
-    dsdecomp::MemorySpace::CudaDevice,
+auto particles = dsdecompx::ParticleInfo::external(
+    dsdecompx::MemorySpace::CudaDevice,
     capacity, owned_count, ghost_count);
 
 particles
@@ -156,7 +156,7 @@ particles
     .add_field<double>("angular_velocity", omega, capacity, 3);
 
 decomp.reverse_exchange(
-    particles, {{"temperature", dsdecomp::ReduceOp::Sum}});
+    particles, {{"temperature", dsdecompx::ReduceOp::Sum}});
 ```
 
 This supports DEM, SPH, PIC, and Lagrangian particle data without changing the
@@ -203,7 +203,7 @@ Directly created Particle data (CPU memory) is accessed as `particles.x`, `parti
 | `has_out_of_domain_particles(particles)` | `particles`: Particle data to inspect | The same `bool` value on every rank | Checks whether any rank has an owned particle outside its assigned region. |
 
 ```cpp
-dsdecomp::Decomp decomp(MPI_COMM_WORLD, config);
+dsdecompx::Decomp decomp(MPI_COMM_WORLD, config);
 int my_rank = decomp.topology().rank();
 int particle_rank = decomp.owner_rank({x, y, z});
 bool need_migration = decomp.has_out_of_domain_particles(particles);
@@ -261,7 +261,7 @@ CUDA `Auto` selects an available method in this order: NVSHMEM, NCCL, CUDA-aware
 ```cpp
 auto result = decomp.exchange_halo(
     particles,
-    dsdecomp::HaloExchangeOptions{rebuild, stream});
+    dsdecompx::HaloExchangeOptions{rebuild, stream});
 ```
 
 | Input arguments | Return value |
@@ -314,8 +314,8 @@ The NVSHMEM backend does not currently support `reverse_halo()`. If `Cuda + Auto
 ```cpp
 decomp.reverse_exchange(
     particles,
-    {{"density_contribution", dsdecomp::ReduceOp::Sum},
-     {"contact_temperature", dsdecomp::ReduceOp::Max}});
+    {{"density_contribution", dsdecompx::ReduceOp::Sum},
+     {"contact_temperature", dsdecompx::ReduceOp::Max}});
 ```
 
 `reverse_exchange()` sends values calculated on ghost particles back to the
@@ -330,7 +330,7 @@ rank that owns the original particle and applies the requested reduction.
 
 The selected fields must first be registered with `add_field()`. Field names,
 scalar types, component counts, and registration order must match on every MPI
-rank; dsDecomp validates this collectively. Registered memory must remain valid
+rank; dsDecompX validates this collectively. Registered memory must remain valid
 and have capacity for `owned_count + ghost_count` particles.
 
 Application-defined field communication and generic reverse reduction
@@ -343,8 +343,8 @@ are rejected explicitly rather than being silently omitted.
 CPU and CUDA use the same function names. CUDA calls only add a CUDA stream.
 
 ```cpp
-config.execution = dsdecomp::ExecutionMode::Cuda;
-dsdecomp::Decomp decomp(MPI_COMM_WORLD, config);
+config.execution = dsdecompx::ExecutionMode::Cuda;
+dsdecompx::Decomp decomp(MPI_COMM_WORLD, config);
 
 decomp.migrate(particles, stream);
 decomp.exchange_halo(particles, {true, stream});
@@ -404,9 +404,9 @@ for (const auto& neighbor : topology.neighbors()) {
 ## `choose_process_grid()`
 
 ```cpp
-auto grid = dsdecomp::choose_process_grid(
+auto grid = dsdecompx::choose_process_grid(
     mpi_size, domain_shape, topology_info,
-    dsdecomp::GridPolicy::Balanced);
+    dsdecompx::GridPolicy::Balanced);
 ```
 
 `choose_process_grid()` calculates how many MPI ranks should be placed along x, y, and z and returns a `GridShape`. Use it to inspect the expected placement before constructing `Decomp`.
@@ -443,10 +443,10 @@ decomp.reset_stats();
 |---|---|---|---|
 | `parse_backend_selection(text)` | `text`: `"auto"`, `"mpi"`, `"nccl"`, or `"nvshmem"` | `BackendSelection` | Converts text into a backend selection value. |
 | `backend_selection_name(value)` | `value`: `BackendSelection` | Backend name string | Converts a backend selection value into text. |
-| `backend_compiled(value)` | `value`: `BackendSelection` to inspect | `bool` | Checks whether that backend is included in this dsDecomp build. |
+| `backend_compiled(value)` | `value`: `BackendSelection` to inspect | `bool` | Checks whether that backend is included in this dsDecompX build. |
 | `GridShape::as_array()` | None | `{px, py, pz}` | Returns the x/y/z rank counts together. |
 | `SampleAggregate::add(value)` | `value`: measurement to add | Nothing | Updates the measurement count, sum, minimum, and maximum. |
-| `version_string` | None | Version string | Provides the current dsDecomp version. |
+| `version_string` | None | Version string | Provides the current dsDecompX version. |
 
 These functions are used when building configuration parsers, diagnostics, or performance comparison tools.
 
@@ -459,7 +459,7 @@ Normal users do not need this section. Use it only when an external library auto
 | `ParticleInfo(owned, ghosts, view)` | `owned`: owned count, `ghosts`: received count, `view`: Particle data memory addresses and size | A new `ParticleInfo` object | Registers low-level memory information at once. |
 | `ParticleInfo(owned, ghosts, provider)` | Owned/ghost counts and an external memory-management object | A new `ParticleInfo` object | Connects an external object that can grow Particle data memory automatically. |
 | `reset_view(view)` | `view`: changed memory addresses and size | Nothing | Updates the addresses of external Particle data. |
-| `Provider::particle_info_view(minimum)` | `minimum`: minimum required particle count | `ParticleView` | Gives dsDecomp the current Particle data addresses and size. |
+| `Provider::particle_info_view(minimum)` | `minimum`: minimum required particle count | `ParticleView` | Gives dsDecompX the current Particle data addresses and size. |
 | `Provider::resize_particle_info(required, preserve)` | `required`: required size, `preserve`: number of particles to keep | `StorageResizeResult` | Grows memory and returns the new addresses and whether reallocation occurred. |
 
 ## Code examples
@@ -469,7 +469,7 @@ The examples below assume that MPI has been initialized and `Decomp decomp(...)`
 ### CPU example 1: create Particle data (CPU memory)
 
 ```cpp
-dsdecomp::ParticleInfo particles(1000);
+dsdecompx::ParticleInfo particles(1000);
 
 for (std::size_t i = 0; i < particles.owned_count(); ++i) {
     particles.x[i] = initial_x(i);
@@ -494,8 +494,8 @@ std::array<std::vector<int>, 2> integers;
 for (auto& field : values) field.resize(capacity);
 for (auto& field : integers) field.resize(capacity);
 
-auto particles = dsdecomp::ParticleInfo::external(
-    dsdecomp::MemorySpace::Host, capacity, owned);
+auto particles = dsdecompx::ParticleInfo::external(
+    dsdecompx::MemorySpace::Host, capacity, owned);
 particles
     .positions(values[0].data(), values[1].data(), values[2].data())
     .velocities(values[3].data(), values[4].data(), values[5].data())
@@ -513,8 +513,8 @@ decomp.exchange_halo(particles);
 cudaStream_t stream;
 cudaStreamCreate(&stream);
 
-auto particles = dsdecomp::ParticleInfo::allocate(
-    dsdecomp::MemorySpace::CudaDevice, 1000);
+auto particles = dsdecompx::ParticleInfo::allocate(
+    dsdecompx::MemorySpace::CudaDevice, 1000);
 
 initialize_particles_on_gpu(particles, stream);
 
@@ -538,8 +538,8 @@ for (auto& field : values)
 for (auto& field : integers)
     cudaMalloc(&field, capacity * sizeof(int));
 
-auto particles = dsdecomp::ParticleInfo::external(
-    dsdecomp::MemorySpace::CudaDevice, capacity, owned);
+auto particles = dsdecompx::ParticleInfo::external(
+    dsdecompx::MemorySpace::CudaDevice, capacity, owned);
 particles
     .positions(values[0], values[1], values[2])
     .velocities(values[3], values[4], values[5])

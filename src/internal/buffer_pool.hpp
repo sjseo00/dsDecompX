@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <vector>
 
-namespace dsdecomp::detail {
+namespace dsdecompx::detail {
 
 // Host MPI buffers use std::vector capacity as the reuse mechanism.
 template<class T>
@@ -42,4 +42,4 @@ void reserve_geometric(std::vector<T>& storage, std::size_t required) {
     storage.reserve(std::max(required, grown));
 }
 
-} // namespace dsdecomp::detail
+} // namespace dsdecompx::detail

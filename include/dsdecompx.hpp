@@ -16,7 +16,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 struct HaloPlanEntry {
     int peer_rank = -1;
@@ -152,4 +152,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-} // namespace dsdecomp
+} // namespace dsdecompx

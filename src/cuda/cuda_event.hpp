@@ -2,7 +2,7 @@
 
 #include <cuda_runtime_api.h>
 
-namespace dsdecomp::cuda {
+namespace dsdecompx::cuda {
 
 class Event {
 public:
@@ -23,4 +23,4 @@ private:
     cudaEvent_t event_ = nullptr;
 };
 
-} // namespace dsdecomp::cuda
+} // namespace dsdecompx::cuda

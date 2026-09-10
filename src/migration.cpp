@@ -1,4 +1,4 @@
-#include "dsdecomp.hpp"
+#include "dsdecompx.hpp"
 
 #include "internal/decomp_impl.hpp"
 #include "internal/buffer_pool.hpp"
@@ -18,28 +18,28 @@
 #include <cuda_runtime_api.h>
 #endif
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 void Decomposition::unpack_migrated_device_particles(
     ParticleView destination, ExecutionStream stream) {
 #if HAS_CUDA
     if (!stream) throw std::invalid_argument(
-        "dsDecomp: device migration unpack requires an explicit stream");
+        "dsDecompX: device migration unpack requires an explicit stream");
     if (destination.memory_space!=MemorySpace::CudaDevice &&
         destination.memory_space!=MemorySpace::CudaManaged) {
         throw std::invalid_argument(
-            "dsDecomp: device migration unpack needs device output");
+            "dsDecompX: device migration unpack needs device output");
     }
     const DeviceParticleBuffer source=impl_->device_migration_result;
     if (destination.count<source.count) throw std::invalid_argument(
-        "dsDecomp: migration output capacity is too small");
+        "dsDecompX: migration output capacity is too small");
     cuda::launch_unpack_records(source.data,source.count,destination,0,
                                 static_cast<cudaStream_t>(stream));
     impl_->cuda_execution->unpack_ready.record(static_cast<cudaStream_t>(stream));
     impl_->cuda_execution->reuse_event_recorded=true;
 #else
     (void)destination; (void)stream;
-    throw std::runtime_error("dsDecomp: CUDA execution layer is not compiled");
+    throw std::runtime_error("dsDecompX: CUDA execution layer is not compiled");
 #endif
 }
 
@@ -58,7 +58,7 @@ void Decomposition::unpack_migrated_fields(ParticleView destination) {
             found->components!=transfer.components || !found->data ||
             found->capacity<count) {
             throw std::invalid_argument(
-                "dsDecomp: missing, incompatible, or undersized migration field '"+
+                "dsDecompX: missing, incompatible, or undersized migration field '"+
                 transfer.name+"'");
         }
         if (!transfer.result.empty()) {
@@ -126,7 +126,7 @@ ParticleRecord wrapped_record(const ConstParticleView& particles,
 void ensure_unique(std::vector<int> ids, const char* phase) {
     std::sort(ids.begin(), ids.end());
     if (std::adjacent_find(ids.begin(), ids.end()) != ids.end()) {
-        throw std::runtime_error(std::string("dsDecomp: duplicate global particle ID ") + phase);
+        throw std::runtime_error(std::string("dsDecompX: duplicate global particle ID ") + phase);
     }
 }
 #endif
@@ -137,26 +137,26 @@ MigrationResult Decomposition::migrate_particles(
     const ConstParticleView& owned_particles, ExecutionStream stream) {
     (void)stream;
     if (impl_->operation_active) {
-        throw std::logic_error("dsDecomp: migration cannot overlap an active halo operation");
+        throw std::logic_error("dsDecompX: migration cannot overlap an active halo operation");
     }
     if (owned_particles.memory_space != MemorySpace::Host) {
 #if HAS_CUDA
         impl_->migrated_owned.clear();
         if (owned_particles.field_count!=0) {
             throw std::runtime_error(
-                "dsDecomp: custom fields currently require host particle memory");
+                "dsDecompX: custom fields currently require host particle memory");
         }
         if (!stream) throw std::invalid_argument(
-            "dsDecomp CUDA migration requires an explicit communication stream");
+            "dsDecompX CUDA migration requires an explicit communication stream");
         if (!impl_->backend->supports_device_data_plane()) throw std::runtime_error(
-            "dsDecomp: selected backend cannot migrate GPU-resident particles");
+            "dsDecompX: selected backend cannot migrate GPU-resident particles");
         if (owned_particles.count &&
             (!owned_particles.x || !owned_particles.y || !owned_particles.z ||
              !owned_particles.vx || !owned_particles.vy || !owned_particles.vz ||
              !owned_particles.fx || !owned_particles.fy || !owned_particles.fz ||
              !owned_particles.mass || !owned_particles.charge ||
              !owned_particles.type || !owned_particles.global_id)) {
-            throw std::invalid_argument("dsDecomp: incomplete CUDA migration view");
+            throw std::invalid_argument("dsDecompX: incomplete CUDA migration view");
         }
         if (!impl_->cuda_execution)
             impl_->cuda_execution=std::make_unique<cuda::ExecutionState>();
@@ -347,7 +347,7 @@ MigrationResult Decomposition::migrate_particles(
 #else
         (void)stream;
         throw std::invalid_argument(
-            "dsDecomp: CUDA migration requires ENABLE_CUDA");
+            "dsDecompX: CUDA migration requires ENABLE_CUDA");
 #endif
     }
 
@@ -383,7 +383,7 @@ MigrationResult Decomposition::migrate_particles(
             field.capacity<owned_particles.count ||
             !field_names.insert(field.name).second) {
             throw std::invalid_argument(
-                "dsDecomp: invalid, duplicate, or undersized migration field");
+                "dsDecompX: invalid, duplicate, or undersized migration field");
         }
         FieldTransferBuffers transfer;
         transfer.name=field.name;
@@ -462,7 +462,7 @@ MigrationResult Decomposition::migrate_particles(
                                        field.record_bytes;
             if (field.receive[peer].size()!=expected) {
                 throw std::runtime_error(
-                    "dsDecomp: custom migration field schema differs across ranks");
+                    "dsDecompX: custom migration field schema differs across ranks");
             }
             field.result.insert(field.result.end(),field.receive[peer].begin(),
                                 field.receive[peer].end());
@@ -528,7 +528,7 @@ MigrationResult Decomposition::migrate_particles(
               record.y >= local.lower[1] && record.y < local.upper[1] &&
               record.z >= local.lower[2] && record.z < local.upper[2])) {
             throw std::runtime_error(
-                "dsDecomp: migrated particle is outside its owning local domain");
+                "dsDecompX: migrated particle is outside its owning local domain");
         }
         if (!(record.x >= impl_->config.domain.lower[0] &&
               record.x < impl_->config.domain.upper[0] &&
@@ -536,7 +536,7 @@ MigrationResult Decomposition::migrate_particles(
               record.y < impl_->config.domain.upper[1] &&
               record.z >= impl_->config.domain.lower[2] &&
               record.z < impl_->config.domain.upper[2])) {
-            throw std::runtime_error("dsDecomp: periodic coordinate wrap is inconsistent");
+            throw std::runtime_error("dsDecompX: periodic coordinate wrap is inconsistent");
         }
     }
     std::vector<int> ids_after = impl_->backend->allgather_ids(
@@ -546,7 +546,7 @@ MigrationResult Decomposition::migrate_particles(
     std::sort(ids_after.begin(), ids_after.end());
     if (ids_before != ids_after) {
         throw std::runtime_error(
-            "dsDecomp: global particle IDs/count changed during migration");
+            "dsDecompX: global particle IDs/count changed during migration");
     }
 #endif
 
@@ -554,4 +554,4 @@ MigrationResult Decomposition::migrate_particles(
     return result;
 }
 
-} // namespace dsdecomp
+} // namespace dsdecompx

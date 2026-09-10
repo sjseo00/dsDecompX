@@ -1,4 +1,4 @@
-# dsDecomp 0.3 release report
+# dsDecompX 0.3 release report
 
 ## Architecture
 
@@ -75,7 +75,7 @@ so no latency, bandwidth, overlap, or scaling result is claimed.
 
 See [synchronization-audit.md](developer/synchronization-audit.md). In summary:
 no `cudaDeviceSynchronize`, `cudaStreamSynchronize`, MPI barrier, or NVSHMEM
-global barrier exists in dsDecomp. MPI uses `MPI_Waitall`; NCCL uses group
+global barrier exists in dsDecompX. MPI uses `MPI_Waitall`; NCCL uses group
 start/end; NVSHMEM uses stream quiet and per-peer signal/wait. CUDA events handle
 metadata readiness, consumer ordering, and safe reuse.
 

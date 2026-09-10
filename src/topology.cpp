@@ -5,7 +5,7 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace dsdecomp {
+namespace dsdecompx {
 namespace {
 
 int direction_slot(int dx, int dy, int dz) {
@@ -17,20 +17,20 @@ int direction_slot(int dx, int dy, int dz) {
 
 void Decomposition::Impl::initialize_topology() {
     if (!backend) {
-        throw std::invalid_argument("dsDecomp: missing backend");
+        throw std::invalid_argument("dsDecompX: missing backend");
     }
     for (int axis = 0; axis < 3; ++axis) {
         if (!(config.domain.upper[axis] > config.domain.lower[axis])) {
-            throw std::invalid_argument("dsDecomp: global-domain extent must be positive");
+            throw std::invalid_argument("dsDecompX: global-domain extent must be positive");
         }
     }
     if (config.halo.width < 0.0) {
-        throw std::invalid_argument("dsDecomp: halo width cannot be negative");
+        throw std::invalid_argument("dsDecompX: halo width cannot be negative");
     }
     if (config.execution == ExecutionMode::Cuda &&
         config.process_grid.allow_rank_reorder) {
         throw std::invalid_argument(
-            "dsDecomp CUDA execution currently requires allow_rank_reorder=false");
+            "dsDecompX CUDA execution currently requires allow_rank_reorder=false");
     }
 
     ProcessGrid selected_grid = config.process_grid;
@@ -127,4 +127,4 @@ void Decomposition::Impl::refresh_domain_geometry() {
     halo_plan_valid = false;
 }
 
-} // namespace dsdecomp
+} // namespace dsdecompx

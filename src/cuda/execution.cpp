@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-namespace dsdecomp::cuda {
+namespace dsdecompx::cuda {
 
 ExecutionState::ExecutionState()
     : pack_ready(cudaEventDisableTiming),
@@ -59,4 +59,4 @@ std::size_t ExecutionState::communication_capacity() const noexcept {
         host_counts.capacity()+host_staging.capacity();
 }
 
-} // namespace dsdecomp::cuda
+} // namespace dsdecompx::cuda

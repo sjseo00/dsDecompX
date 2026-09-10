@@ -1,6 +1,6 @@
 #include "runtime.hpp"
 
-#include "dsdecomp.hpp"
+#include "dsdecompx.hpp"
 #include "backends/mpi.hpp"
 #if HAS_NCCL
 #include "backends/nccl.hpp"
@@ -21,7 +21,7 @@
 #include <cuda_runtime_api.h>
 #endif
 
-namespace dsdecomp {
+namespace dsdecompx {
 namespace {
 
 BackendSelection requested_backend(const Config& config) {
@@ -39,25 +39,25 @@ Backend create_selected_backend(MPI_Comm communicator, const Config& config) {
     if (requested == BackendSelection::Nccl) {
         if (config.execution != ExecutionMode::Cuda) {
             throw std::invalid_argument(
-                "dsDecomp: NCCL backend requires ExecutionMode::Cuda");
+                "dsDecompX: NCCL backend requires ExecutionMode::Cuda");
         }
 #if HAS_NCCL
         return nccl::make_backend(communicator);
 #else
         throw std::runtime_error(
-            "dsDecomp: NCCL backend was explicitly requested but not compiled");
+            "dsDecompX: NCCL backend was explicitly requested but not compiled");
 #endif
     }
     if (requested == BackendSelection::Nvshmem) {
         if (config.execution != ExecutionMode::Cuda) {
             throw std::invalid_argument(
-                "dsDecomp: NVSHMEM backend requires ExecutionMode::Cuda");
+                "dsDecompX: NVSHMEM backend requires ExecutionMode::Cuda");
         }
 #if HAS_NVSHMEM
         return nvshmem::make_backend(communicator);
 #else
         throw std::runtime_error(
-            "dsDecomp: NVSHMEM backend was explicitly requested but not compiled");
+            "dsDecompX: NVSHMEM backend was explicitly requested but not compiled");
 #endif
     }
     if (requested == BackendSelection::Mpi ||
@@ -97,7 +97,7 @@ void copy_record(ParticleView& view, std::size_t index,
 void require_output_capacity(const ParticleView& view, std::size_t required) {
     if (view.count < required) {
         throw std::invalid_argument(
-            "dsDecomp: particle storage returned insufficient output capacity");
+            "dsDecompX: particle storage returned insufficient output capacity");
     }
 }
 
@@ -121,7 +121,7 @@ void validate_collective_field_schema(MPI_Comm communicator,
     MPI_Allreduce(&local,&maximum,1,MPI_UNSIGNED_LONG_LONG,MPI_MAX,communicator);
     if (minimum!=maximum) {
         throw std::invalid_argument(
-            "dsDecomp: custom field names, types, components, and order "
+            "dsDecompX: custom field names, types, components, and order "
             "must match on every rank");
     }
 }
@@ -129,7 +129,7 @@ void validate_collective_field_schema(MPI_Comm communicator,
 #if HAS_CUDA
 void cuda_require(cudaError_t status, const char* operation) {
     if (status != cudaSuccess) {
-        throw std::runtime_error(std::string("dsDecomp: ") + operation +
+        throw std::runtime_error(std::string("dsDecompX: ") + operation +
                                  ": " + cudaGetErrorString(status));
     }
 }
@@ -262,7 +262,7 @@ ParticleInfo ParticleInfo::allocate(MemorySpace memory_space,
 #else
     (void)owned;
     throw std::runtime_error(
-        "dsDecomp: CUDA ParticleInfo allocation requires a CUDA build");
+        "dsDecompX: CUDA ParticleInfo allocation requires a CUDA build");
 #endif
 }
 
@@ -300,7 +300,7 @@ void ParticleInfo::reset_counts(std::size_t owned, std::size_t ghosts) {
     const std::size_t total = owned + ghosts;
     if (read_view(total).count < total) {
         throw std::invalid_argument(
-            "dsDecomp: particle storage is smaller than the supplied counts");
+            "dsDecompX: particle storage is smaller than the supplied counts");
     }
     commit_counts(owned, ghosts);
 }
@@ -344,7 +344,7 @@ void ParticleInfo::resize_owned(std::size_t count) {
     if (external_) {
         if (!owns_device_memory_) {
             throw std::logic_error(
-                "dsDecomp: resize_owned cannot resize borrowed particle memory");
+                "dsDecompX: resize_owned cannot resize borrowed particle memory");
         }
         resize_storage(count, std::min(count, owned_count_));
         commit_counts(count, 0);
@@ -353,7 +353,7 @@ void ParticleInfo::resize_owned(std::size_t count) {
     for (const auto& field : fields_) {
         if (field.capacity<count) {
             throw std::length_error(
-                "dsDecomp: custom particle field '"+field.name+
+                "dsDecompX: custom particle field '"+field.name+
                 "' has insufficient capacity");
         }
     }
@@ -365,7 +365,7 @@ ConstParticleView ParticleInfo::read_view(std::size_t count) const {
     if (external_) {
         if (storage_.count < count) {
             throw std::invalid_argument(
-                "dsDecomp: external particle memory has insufficient capacity");
+                "dsDecompX: external particle memory has insufficient capacity");
         }
         return as_const_view(storage_);
     }
@@ -378,7 +378,7 @@ ParticleInfo::ParticleInfo(
       storage_(storage) {
     if (storage_.count < owned + ghosts) {
         throw std::invalid_argument(
-            "dsDecomp: external particle view is smaller than its particle counts");
+            "dsDecompX: external particle view is smaller than its particle counts");
     }
     if (storage.fields && storage.field_count) {
         fields_.assign(storage.fields,storage.fields+storage.field_count);
@@ -434,7 +434,7 @@ ParticleInfo& ParticleInfo::add_field_view(ParticleFieldView field) {
     if (field.name.empty() || !field.data || field.components==0 ||
         field.capacity<size()) {
         throw std::invalid_argument(
-            "dsDecomp: invalid or undersized custom particle field");
+            "dsDecompX: invalid or undersized custom particle field");
     }
     const auto duplicate=std::find_if(
         fields_.begin(),fields_.end(),
@@ -443,7 +443,7 @@ ParticleInfo& ParticleInfo::add_field_view(ParticleFieldView field) {
         });
     if (duplicate!=fields_.end()) {
         throw std::invalid_argument(
-            "dsDecomp: duplicate custom particle field '"+field.name+"'");
+            "dsDecompX: duplicate custom particle field '"+field.name+"'");
     }
     fields_.push_back(std::move(field));
     storage_.fields=fields_.data();
@@ -456,7 +456,7 @@ StorageResizeResult ParticleInfo::resize_storage(
     for (const auto& field : fields_) {
         if (field.capacity<required) {
             throw std::length_error(
-                "dsDecomp: custom particle field '"+field.name+
+                "dsDecompX: custom particle field '"+field.name+
                 "' has insufficient capacity");
         }
     }
@@ -486,12 +486,12 @@ StorageResizeResult ParticleInfo::resize_storage(
         return {storage_, true};
 #else
         throw std::runtime_error(
-            "dsDecomp: CUDA ParticleInfo resize requires a CUDA build");
+            "dsDecompX: CUDA ParticleInfo resize requires a CUDA build");
 #endif
     }
     if (!provider_) {
         throw std::length_error(
-            "dsDecomp: fixed external particle storage is too small");
+            "dsDecompX: fixed external particle storage is too small");
     }
     StorageResizeResult result =
         provider_->resize_particle_info(required, preserve);
@@ -505,7 +505,7 @@ StorageResizeResult ParticleInfo::resize_storage(
 void ParticleInfo::reset_view(ParticleView storage) {
     if (storage.count < size()) {
         throw std::invalid_argument(
-            "dsDecomp: replacement particle view is smaller than current particles");
+            "dsDecompX: replacement particle view is smaller than current particles");
     }
     release_device_memory();
     external_ = true;
@@ -523,12 +523,12 @@ void ParticleInfo::reset_view(ParticleView storage) {
 Decomp::Decomp(MPI_Comm communicator, Config config)
     : impl_(std::make_unique<Impl>()) {
     if (communicator == MPI_COMM_NULL) {
-        throw std::invalid_argument("dsDecomp: MPI communicator is null");
+        throw std::invalid_argument("dsDecompX: MPI communicator is null");
     }
 #if !HAS_CUDA
     if (config.execution == ExecutionMode::Cuda) {
         throw std::runtime_error(
-            "dsDecomp: CUDA execution requested but ENABLE_CUDA is OFF");
+            "dsDecompX: CUDA execution requested but ENABLE_CUDA is OFF");
     }
 #endif
     if (config.grid_policy == GridPolicy::TopologyAware &&
@@ -628,7 +628,7 @@ HaloResult Decomp::exchange_halo(ParticleInfo& particles,
     if (input.memory_space == MemorySpace::Host) {
         if (output.view.memory_space != MemorySpace::Host) {
             throw std::invalid_argument(
-                "dsDecomp: host halo input requires host output storage");
+                "dsDecompX: host halo input requires host output storage");
         }
         std::size_t index = owned;
         for (const auto& buffer : impl_->decomposition->received_halos()) {
@@ -670,7 +670,7 @@ MigrationResult Decomp::migrate(ParticleInfo& particles,
     if (input.memory_space == MemorySpace::Host) {
         if (output.view.memory_space != MemorySpace::Host) {
             throw std::invalid_argument(
-                "dsDecomp: host migration input requires host output storage");
+                "dsDecompX: host migration input requires host output storage");
         }
         const auto& records = impl_->decomposition->migrated_owned_particles();
         for (std::size_t i=0; i<records.size(); ++i) {
@@ -717,4 +717,4 @@ PerfStats Decomp::get_global_stats() const {
 }
 void Decomp::reset_stats() noexcept { impl_->decomposition->reset_stats(); }
 
-} // namespace dsdecomp
+} // namespace dsdecompx

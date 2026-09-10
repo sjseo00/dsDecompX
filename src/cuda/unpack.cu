@@ -1,7 +1,7 @@
 #include "kernels.hpp"
 #include "cuda_error.hpp"
 
-namespace dsdecomp::cuda {
+namespace dsdecompx::cuda {
 namespace {
 
 __device__ double reverse_atomic_add(double* address,double value) {
@@ -76,4 +76,4 @@ void launch_accumulate_reverse_records(const ParticleRecord* records,
     detail::check(cudaGetLastError(),"launch reverse halo accumulation kernel");
 }
 
-} // namespace dsdecomp::cuda
+} // namespace dsdecompx::cuda

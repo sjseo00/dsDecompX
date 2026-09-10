@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <tuple>
 
-namespace dsdecomp {
+namespace dsdecompx {
 namespace {
 
 double balanced_score(const GridShape& grid, const DomainShape& domain) {
@@ -81,16 +81,16 @@ GridShape choose_process_grid(int nranks,
                               const TopologyInfo& topology,
                               GridPolicy policy,
                               GridShape manual) {
-    if (nranks <= 0) throw std::invalid_argument("dsDecomp: nranks must be positive");
+    if (nranks <= 0) throw std::invalid_argument("dsDecompX: nranks must be positive");
     for (double length : domain.lengths) {
         if (!(length > 0.0)) {
-            throw std::invalid_argument("dsDecomp: domain lengths must be positive");
+            throw std::invalid_argument("dsDecompX: domain lengths must be positive");
         }
     }
     if (policy == GridPolicy::Manual) {
         if (manual.px <= 0 || manual.py <= 0 || manual.pz <= 0 ||
             manual.px * manual.py * manual.pz != nranks) {
-            throw std::invalid_argument("dsDecomp: manual process grid does not match nranks");
+            throw std::invalid_argument("dsDecompX: manual process grid does not match nranks");
         }
         return manual;
     }
@@ -121,4 +121,4 @@ GridShape choose_process_grid(int nranks,
     return best;
 }
 
-} // namespace dsdecomp
+} // namespace dsdecompx

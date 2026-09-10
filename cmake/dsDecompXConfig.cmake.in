@@ -1,0 +1,23 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(MPI REQUIRED COMPONENTS CXX)
+
+set(dsDecompX_WITH_CUDA @ENABLE_CUDA@)
+set(dsDecompX_WITH_NCCL @ENABLE_NCCL@)
+set(dsDecompX_WITH_NVSHMEM @ENABLE_NVSHMEM@)
+if(dsDecompX_WITH_CUDA)
+    find_dependency(CUDAToolkit REQUIRED)
+endif()
+if(dsDecompX_WITH_NCCL OR dsDecompX_WITH_NVSHMEM)
+    list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+endif()
+if(dsDecompX_WITH_NCCL)
+    find_dependency(NCCL REQUIRED MODULE)
+endif()
+if(dsDecompX_WITH_NVSHMEM)
+    find_dependency(NVSHMEM REQUIRED MODULE)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/dsDecompXTargets.cmake")
+check_required_components(dsDecompX)

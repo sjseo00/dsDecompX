@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace dsdecomp::cuda {
+namespace dsdecompx::cuda {
 namespace {
 
 struct DeviceDomain { double lower[3]; double upper[3]; bool periodic[3]; };
@@ -98,4 +98,4 @@ void launch_build_migration_layout(
     detail::check(cudaGetLastError(),"pack sorted migration records");
 }
 
-} // namespace dsdecomp::cuda
+} // namespace dsdecompx::cuda

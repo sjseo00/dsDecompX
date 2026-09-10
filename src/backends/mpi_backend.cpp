@@ -17,7 +17,7 @@
 #include <cuda_runtime_api.h>
 #endif
 
-namespace dsdecomp::detail {
+namespace dsdecompx::detail {
 namespace {
 
 int opposite_direction_slot(const Neighbor& neighbor) {
@@ -33,19 +33,19 @@ public:
     MpiBackend(MPI_Comm communicator, const mpi::BackendOptions& options)
         : options_(options) {
         if (communicator == MPI_COMM_NULL) {
-            throw std::invalid_argument("dsDecomp: MPI communicator is null");
+            throw std::invalid_argument("dsDecompX: MPI communicator is null");
         }
 
         int initialized = 0;
         MPI_Initialized(&initialized);
         if (!initialized) {
-            throw std::runtime_error("dsDecomp: MPI must be initialized before backend creation");
+            throw std::runtime_error("dsDecompX: MPI must be initialized before backend creation");
         }
 
         int provided = MPI_THREAD_SINGLE;
         MPI_Query_thread(&provided);
         if (provided < options.required_thread_level) {
-            throw std::runtime_error("dsDecomp: MPI thread support is below the requested level");
+            throw std::runtime_error("dsDecompX: MPI thread support is below the requested level");
         }
 
         if (options.duplicate_communicator) {
@@ -62,7 +62,7 @@ public:
         if (options.cuda_aware == mpi::CudaAwareMode::Required && !capability) {
             cleanup();
             throw std::runtime_error(
-                "dsDecomp: CUDA-aware MPI was required but could not be confirmed");
+                "dsDecompX: CUDA-aware MPI was required but could not be confirmed");
         }
         cuda_aware_enabled_ =
             options.cuda_aware != mpi::CudaAwareMode::Disabled && capability;
@@ -97,13 +97,13 @@ public:
         };
 
         if (dims[0] < 0 || dims[1] < 0 || dims[2] < 0) {
-            throw std::invalid_argument("dsDecomp: process-grid dimensions cannot be negative");
+            throw std::invalid_argument("dsDecompX: process-grid dimensions cannot be negative");
         }
 
         MPI_Dims_create(size_, 3, dims);
         if (dims[0] * dims[1] * dims[2] != size_) {
             throw std::invalid_argument(
-                "dsDecomp: process-grid dimensions do not match communicator size");
+                "dsDecompX: process-grid dimensions do not match communicator size");
         }
 
         int periods[3] = {
@@ -115,7 +115,7 @@ public:
         MPI_Cart_create(world_, 3, dims, periods,
                         grid.allow_rank_reorder ? 1 : 0, &cart_);
         if (cart_ == MPI_COMM_NULL) {
-            throw std::runtime_error("dsDecomp: MPI_Cart_create failed");
+            throw std::runtime_error("dsDecompX: MPI_Cart_create failed");
         }
 
         MPI_Comm_rank(cart_, &rank_);
@@ -129,7 +129,7 @@ public:
 
     int cartesian_rank(const Vec3i& coordinates) const override {
         if (cart_ == MPI_COMM_NULL) {
-            throw std::runtime_error("dsDecomp: Cartesian topology is not initialized");
+            throw std::runtime_error("dsDecompX: Cartesian topology is not initialized");
         }
         int coords[3] = {coordinates[0], coordinates[1], coordinates[2]};
         int result = MPI_PROC_NULL;
@@ -143,7 +143,7 @@ public:
         std::vector<unsigned int>& receive_counts,
         int tag_base) override {
         if (neighbors.size() != send_counts.size()) {
-            throw std::invalid_argument("dsDecomp MPI: neighbor/count size mismatch");
+            throw std::invalid_argument("dsDecompX MPI: neighbor/count size mismatch");
         }
         receive_counts.assign(neighbors.size(), 0u);
         std::vector<MPI_Request> count_requests;
@@ -182,7 +182,7 @@ public:
     void exchange_rank_counts(const std::vector<unsigned int>& send,
                               std::vector<unsigned int>& receive) override {
         if (send.size()!=static_cast<std::size_t>(size_))
-            throw std::invalid_argument("dsDecomp MPI: migration count table size mismatch");
+            throw std::invalid_argument("dsDecompX MPI: migration count table size mismatch");
         receive.resize(static_cast<std::size_t>(size_));
         MPI_Alltoall(send.data(),1,MPI_UNSIGNED,receive.data(),1,MPI_UNSIGNED,
                      data_comm());
@@ -199,24 +199,24 @@ public:
     void begin_device_exchange(const DeviceExchange& exchange) override {
         if (!cuda_aware_enabled_ && !options_.allow_host_staging) {
             throw std::runtime_error(
-                "dsDecomp MPI: CUDA-aware MPI unavailable and host staging disabled");
+                "dsDecompX MPI: CUDA-aware MPI unavailable and host staging disabled");
         }
         if (exchange_active_) {
-            throw std::logic_error("dsDecomp MPI: another exchange is active");
+            throw std::logic_error("dsDecompX MPI: another exchange is active");
         }
         if (!exchange.transfers) {
-            throw std::invalid_argument("dsDecomp MPI: missing device transfers");
+            throw std::invalid_argument("dsDecompX MPI: missing device transfers");
         }
         for (const DeviceTransfer& transfer : *exchange.transfers) {
             if (transfer.send_bytes>static_cast<std::size_t>(INT_MAX) ||
                 transfer.receive_bytes>static_cast<std::size_t>(INT_MAX)) {
                 throw std::overflow_error(
-                    "dsDecomp MPI: device transfer exceeds MPI int count");
+                    "dsDecompX MPI: device transfer exceeds MPI int count");
             }
             if ((transfer.send_bytes && !transfer.send_buffer) ||
                 (transfer.receive_bytes && !transfer.receive_buffer)) {
                 throw std::invalid_argument(
-                    "dsDecomp MPI: nonzero device transfer has a null buffer");
+                    "dsDecompX MPI: nonzero device transfer has a null buffer");
             }
         }
         requests_.clear();
@@ -251,7 +251,7 @@ public:
 #else
         if (active_device_staging_) {
             throw std::runtime_error(
-                "dsDecomp MPI: host staging requires ENABLE_CUDA");
+                "dsDecompX MPI: host staging requires ENABLE_CUDA");
         }
 #endif
         exchange_active_ = true;
@@ -287,7 +287,7 @@ public:
 
     void end_device_exchange(const DeviceExchange&) override {
         if (!exchange_active_) {
-            throw std::logic_error("dsDecomp MPI: no device exchange is active");
+            throw std::logic_error("dsDecompX MPI: no device exchange is active");
         }
         if (!requests_.empty()) {
             MPI_Waitall(static_cast<int>(requests_.size()), requests_.data(),
@@ -343,10 +343,10 @@ public:
         int data_tag_base,
         bool direct_self_copy) override {
         if (exchange_active_) {
-            throw std::logic_error("dsDecomp: an MPI exchange is already active");
+            throw std::logic_error("dsDecompX: an MPI exchange is already active");
         }
         if (neighbors.size() != send_buffers.size()) {
-            throw std::invalid_argument("dsDecomp: neighbor/send-buffer size mismatch");
+            throw std::invalid_argument("dsDecompX: neighbor/send-buffer size mismatch");
         }
 
         receive_buffers.resize(neighbors.size());
@@ -432,7 +432,7 @@ public:
 
     void end_exchange_records() override {
         if (!exchange_active_) {
-            throw std::logic_error("dsDecomp: no MPI exchange is active");
+            throw std::logic_error("dsDecompX: no MPI exchange is active");
         }
         if (!requests_.empty()) {
             MPI_Waitall(static_cast<int>(requests_.size()), requests_.data(),
@@ -446,10 +446,10 @@ public:
         const std::vector<std::vector<ParticleRecord>>& send_by_rank,
         std::vector<std::vector<ParticleRecord>>& receive_by_rank) override {
         if (exchange_active_) {
-            throw std::logic_error("dsDecomp: halo and migration cannot overlap on one backend");
+            throw std::logic_error("dsDecompX: halo and migration cannot overlap on one backend");
         }
         if (send_by_rank.size() != static_cast<std::size_t>(size_)) {
-            throw std::invalid_argument("dsDecomp: migration send table does not match MPI size");
+            throw std::invalid_argument("dsDecompX: migration send table does not match MPI size");
         }
 
         migration_send_counts_.assign(size_, 0);
@@ -509,11 +509,11 @@ public:
         bool direct_self_copy) override {
         if (exchange_active_) {
             throw std::logic_error(
-                "dsDecomp: byte exchange cannot overlap another exchange");
+                "dsDecompX: byte exchange cannot overlap another exchange");
         }
         if (neighbors.size() != send_buffers.size()) {
             throw std::invalid_argument(
-                "dsDecomp: neighbor/field-buffer size mismatch");
+                "dsDecompX: neighbor/field-buffer size mismatch");
         }
         receive_buffers.assign(neighbors.size(), {});
         std::vector<int> active;
@@ -543,7 +543,7 @@ public:
         for (std::size_t i=0; i<active.size(); ++i) {
             const int n=active[i];
             if (send_buffers[n].size() > static_cast<std::size_t>(INT_MAX)) {
-                throw std::overflow_error("dsDecomp: custom field message is too large");
+                throw std::overflow_error("dsDecompX: custom field message is too large");
             }
             send_counts[i]=static_cast<int>(send_buffers[n].size());
             MPI_Request receive_request=MPI_REQUEST_NULL;
@@ -593,7 +593,7 @@ public:
         std::vector<std::vector<std::byte>>& receive_by_rank) override {
         if (send_by_rank.size()!=static_cast<std::size_t>(size_)) {
             throw std::invalid_argument(
-                "dsDecomp: custom field migration table does not match MPI size");
+                "dsDecompX: custom field migration table does not match MPI size");
         }
         std::vector<int> send_counts(size_,0),receive_counts(size_,0);
         std::vector<int> send_offsets(size_,0),receive_offsets(size_,0);
@@ -601,7 +601,7 @@ public:
         for (int peer=0; peer<size_; ++peer) {
             if (send_by_rank[peer].size()>static_cast<std::size_t>(INT_MAX) ||
                 send_total>static_cast<std::size_t>(INT_MAX)) {
-                throw std::overflow_error("dsDecomp: custom field migration is too large");
+                throw std::overflow_error("dsDecompX: custom field migration is too large");
             }
             send_counts[peer]=static_cast<int>(send_by_rank[peer].size());
             send_offsets[peer]=static_cast<int>(send_total);
@@ -617,7 +617,7 @@ public:
         std::size_t receive_total=0;
         for (int peer=0; peer<size_; ++peer) {
             if (receive_total>static_cast<std::size_t>(INT_MAX)) {
-                throw std::overflow_error("dsDecomp: custom field migration is too large");
+                throw std::overflow_error("dsDecompX: custom field migration is too large");
             }
             receive_offsets[peer]=static_cast<int>(receive_total);
             receive_total+=static_cast<std::size_t>(receive_counts[peer]);
@@ -723,7 +723,7 @@ private:
     void cuda_check(cudaError_t status, const char* operation) const {
         if (status == cudaSuccess) return;
         throw std::runtime_error(
-            std::string("dsDecomp MPI rank=") + std::to_string(rank_) +
+            std::string("dsDecompX MPI rank=") + std::to_string(rank_) +
             " operation=" + operation + ": " + cudaGetErrorString(status));
     }
 
@@ -880,9 +880,9 @@ private:
 };
 
 } // namespace
-} // namespace dsdecomp::detail
+} // namespace dsdecompx::detail
 
-namespace dsdecomp::mpi {
+namespace dsdecompx::mpi {
 
 Backend make_backend(MPI_Comm communicator, const BackendOptions& options) {
     return Backend(std::make_unique<detail::MpiBackend>(communicator, options));
@@ -939,4 +939,4 @@ TopologyInfo discover_topology(MPI_Comm communicator) noexcept {
     }
 }
 
-} // namespace dsdecomp::mpi
+} // namespace dsdecompx::mpi

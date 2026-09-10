@@ -1,6 +1,6 @@
 # Memory ownership
 
-Application SoA pointers are borrowed and never freed by dsDecomp. Host result
+Application SoA pointers are borrowed and never freed by dsDecompX. Host result
 vectors and device result buffers are library-owned and remain valid until the
 same plan storage is reused. CUDA `DeviceBuffer`/`PinnedBuffer` distinguish
 logical size from capacity and grow geometrically. Outstanding operations hold

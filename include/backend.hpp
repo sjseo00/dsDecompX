@@ -4,7 +4,7 @@
 
 #include <memory>
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 namespace detail {
 class Backend;
@@ -31,4 +31,4 @@ private:
     std::unique_ptr<detail::Backend> implementation_;
 };
 
-} // namespace dsdecomp
+} // namespace dsdecompx

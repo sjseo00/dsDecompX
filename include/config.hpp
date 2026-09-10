@@ -6,7 +6,7 @@
 
 #include <cstddef>
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 // Expert-only backend controls. Normal applications only select
 // Config::execution and leave these automatic defaults unchanged.
@@ -39,4 +39,4 @@ struct MigrationResult {
     std::size_t new_owned_count = 0;
 };
 
-} // namespace dsdecomp
+} // namespace dsdecompx

@@ -4,7 +4,7 @@
 #include <cub/device/device_scan.cuh>
 #include <cmath>
 
-namespace dsdecomp::cuda {
+namespace dsdecompx::cuda {
 namespace {
 
 struct DeviceShift { double value[3]; };
@@ -214,4 +214,4 @@ void launch_pack_migration_destination(
     detail::check(cudaGetLastError(),"launch migration destination count");
 }
 
-} // namespace dsdecomp::cuda
+} // namespace dsdecompx::cuda

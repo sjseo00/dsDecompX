@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dsdecomp.hpp"
+#include "dsdecompx.hpp"
 #include "internal/backend.hpp"
 #include "internal/buffer_pool.hpp"
 
@@ -13,7 +13,7 @@
 #include "cuda/execution.hpp"
 #endif
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 struct FieldTransferBuffers {
     std::string name;
@@ -96,4 +96,4 @@ struct Decomposition::Impl {
     }
 };
 
-} // namespace dsdecomp
+} // namespace dsdecompx

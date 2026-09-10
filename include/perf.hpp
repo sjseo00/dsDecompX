@@ -8,7 +8,7 @@
 #define ENABLE_PERF_COUNTERS 1
 #endif
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 struct SampleAggregate {
     std::uint64_t count = 0;
@@ -49,4 +49,4 @@ struct PerfStats {
     std::vector<NeighborByteCounter> neighbor_bytes;
 };
 
-} // namespace dsdecomp
+} // namespace dsdecompx

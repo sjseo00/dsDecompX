@@ -3,7 +3,7 @@
 
 #include <cub/device/device_scan.cuh>
 
-namespace dsdecomp::cuda {
+namespace dsdecompx::cuda {
 namespace {
 
 __global__ void mark_retained_kernel(const int* destinations,
@@ -69,4 +69,4 @@ void launch_compact_records(const ConstParticleView& particles,
     detail::check(cudaGetLastError(), "launch compact count kernel");
 }
 
-} // namespace dsdecomp::cuda
+} // namespace dsdecompx::cuda

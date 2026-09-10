@@ -2,7 +2,7 @@
 
 #include "topology.hpp"
 
-namespace dsdecomp::detail {
+namespace dsdecompx::detail {
 
 // Internal mutation gateway. Public consumers receive a read-only Topology.
 struct TopologyAccess {
@@ -14,4 +14,4 @@ struct TopologyAccess {
     static std::vector<Neighbor>& neighbors(Topology& topology) { return topology.neighbors_; }
 };
 
-} // namespace dsdecomp::detail
+} // namespace dsdecompx::detail

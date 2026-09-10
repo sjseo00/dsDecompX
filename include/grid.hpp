@@ -5,7 +5,7 @@
 #include <array>
 #include <vector>
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 struct GridShape {
     int px = 1;
@@ -42,4 +42,4 @@ GridShape choose_process_grid(int nranks,
                               GridPolicy policy,
                               GridShape manual = {});
 
-} // namespace dsdecomp
+} // namespace dsdecompx

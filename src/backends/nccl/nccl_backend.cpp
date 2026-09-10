@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace dsdecomp::detail {
+namespace dsdecompx::detail {
 namespace {
 
 int opposite_slot(const Neighbor& neighbor) {
@@ -28,12 +28,12 @@ public:
     explicit NcclBackend(MPI_Comm bootstrap) {
       try {
         if (bootstrap == MPI_COMM_NULL) {
-            throw std::invalid_argument("dsDecomp NCCL: bootstrap communicator is null");
+            throw std::invalid_argument("dsDecompX NCCL: bootstrap communicator is null");
         }
         int initialized = 0;
         MPI_Initialized(&initialized);
         if (!initialized) {
-            throw std::runtime_error("dsDecomp NCCL: MPI must be initialized first");
+            throw std::runtime_error("dsDecompX NCCL: MPI must be initialized first");
         }
         mpi_check(MPI_Comm_dup(bootstrap, &control_), "MPI_Comm_dup bootstrap");
         mpi_check(MPI_Comm_rank(control_, &bootstrap_rank_), "MPI_Comm_rank");
@@ -83,11 +83,11 @@ public:
                           const std::array<bool, 3>& periodic) override {
         int dims[3] = {grid.dimensions[0], grid.dimensions[1], grid.dimensions[2]};
         if (dims[0] < 0 || dims[1] < 0 || dims[2] < 0) {
-            throw std::invalid_argument("dsDecomp NCCL: negative process-grid dimension");
+            throw std::invalid_argument("dsDecompX NCCL: negative process-grid dimension");
         }
         mpi_check(MPI_Dims_create(size_, 3, dims), "MPI_Dims_create");
         if (dims[0] * dims[1] * dims[2] != size_) {
-            throw std::invalid_argument("dsDecomp NCCL: process grid does not match rank count");
+            throw std::invalid_argument("dsDecompX NCCL: process grid does not match rank count");
         }
         int periods[3] = {periodic[0] ? 1 : 0,
                           periodic[1] ? 1 : 0,
@@ -96,7 +96,7 @@ public:
                                   grid.allow_rank_reorder ? 1 : 0, &cart_),
                   "MPI_Cart_create");
         if (cart_ == MPI_COMM_NULL) {
-            throw std::runtime_error("dsDecomp NCCL: MPI_Cart_create returned null");
+            throw std::runtime_error("dsDecompX NCCL: MPI_Cart_create returned null");
         }
         mpi_check(MPI_Comm_rank(cart_, &rank_), "MPI cart rank");
         mpi_check(MPI_Cart_coords(cart_, rank_, 3, coordinates_.data()),
@@ -264,16 +264,16 @@ public:
                                 std::vector<std::vector<ParticleRecord>>&,
                                 int, int, bool) override {
         throw std::runtime_error(
-            "dsDecomp NCCL: host ParticleView is unsupported; use CUDA execution plans");
+            "dsDecompX NCCL: host ParticleView is unsupported; use CUDA execution plans");
     }
     void end_exchange_records() override {
-        throw std::runtime_error("dsDecomp NCCL: no host exchange exists");
+        throw std::runtime_error("dsDecompX NCCL: no host exchange exists");
     }
     void exchange_all_to_all_records(
         const std::vector<std::vector<ParticleRecord>>&,
         std::vector<std::vector<ParticleRecord>>&) override {
         throw std::runtime_error(
-            "dsDecomp NCCL: host migration is unsupported; use CUDA execution plans");
+            "dsDecompX NCCL: host migration is unsupported; use CUDA execution plans");
     }
 
 #ifndef NDEBUG
@@ -322,7 +322,7 @@ public:
 private:
     std::string context(const char* operation, const char* action) const {
         std::ostringstream out;
-        out << "dsDecomp NCCL rank=" << rank_
+        out << "dsDecompX NCCL rank=" << rank_
             << " operation=" << (operation ? operation : "unknown")
             << " action=" << action;
         return out.str();
@@ -349,7 +349,7 @@ private:
     }
     int nccl_rank(int cartesian_peer) const {
         if (cartesian_peer < 0 || cartesian_peer >= size_) {
-            throw std::out_of_range("dsDecomp NCCL: invalid Cartesian peer");
+            throw std::out_of_range("dsDecompX NCCL: invalid Cartesian peer");
         }
         return cart_to_bootstrap_.empty()
             ? cartesian_peer
@@ -396,12 +396,12 @@ private:
 };
 
 } // namespace
-} // namespace dsdecomp::detail
+} // namespace dsdecompx::detail
 
-namespace dsdecomp::nccl {
+namespace dsdecompx::nccl {
 
 Backend make_backend(MPI_Comm bootstrap_communicator) {
     return Backend(std::make_unique<detail::NcclBackend>(bootstrap_communicator));
 }
 
-} // namespace dsdecomp::nccl
+} // namespace dsdecompx::nccl

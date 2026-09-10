@@ -4,10 +4,10 @@
 
 #include <mpi.h>
 
-namespace dsdecomp::nccl {
+namespace dsdecompx::nccl {
 
 // MPI is the control plane used to broadcast ncclUniqueId. Halo and migration
 // payloads use NCCL after initialization.
 Backend make_backend(MPI_Comm bootstrap_communicator);
 
-} // namespace dsdecomp::nccl
+} // namespace dsdecompx::nccl

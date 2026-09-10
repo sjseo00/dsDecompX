@@ -13,7 +13,7 @@
 #include <vector>
 #include <stdexcept>
 
-namespace dsdecomp::detail {
+namespace dsdecompx::detail {
 
 class Backend {
 public:
@@ -40,25 +40,25 @@ public:
     virtual bool supports_device_data_plane() const noexcept { return false; }
     virtual void begin_device_exchange(const DeviceExchange&) {
         throw std::runtime_error(
-            "dsDecomp: selected backend has no GPU-resident data plane");
+            "dsDecompX: selected backend has no GPU-resident data plane");
     }
     virtual void end_device_exchange(const DeviceExchange&) {
         throw std::runtime_error(
-            "dsDecomp: selected backend has no GPU-resident data plane");
+            "dsDecompX: selected backend has no GPU-resident data plane");
     }
     virtual void* allocate_symmetric(std::size_t) {
         throw std::runtime_error(
-            "dsDecomp: selected backend does not provide symmetric memory");
+            "dsDecompX: selected backend does not provide symmetric memory");
     }
     virtual void* allocate_symmetric_zeroed(std::size_t count,
                                              std::size_t element_size) {
         (void)count; (void)element_size;
         throw std::runtime_error(
-            "dsDecomp: selected backend does not provide symmetric memory");
+            "dsDecompX: selected backend does not provide symmetric memory");
     }
     virtual void free_symmetric(void*) {
         throw std::runtime_error(
-            "dsDecomp: selected backend does not provide symmetric memory");
+            "dsDecompX: selected backend does not provide symmetric memory");
     }
     virtual std::size_t maximum_size(std::size_t local) const = 0;
 
@@ -93,13 +93,13 @@ public:
         std::vector<std::vector<std::byte>>&,
         int, int, bool) {
         throw std::runtime_error(
-            "dsDecomp: selected backend does not support host custom fields");
+            "dsDecompX: selected backend does not support host custom fields");
     }
     virtual void exchange_all_to_all_bytes(
         const std::vector<std::vector<std::byte>>&,
         std::vector<std::vector<std::byte>>&) {
         throw std::runtime_error(
-            "dsDecomp: selected backend does not support host custom fields");
+            "dsDecompX: selected backend does not support host custom fields");
     }
 
 #ifndef NDEBUG
@@ -113,4 +113,4 @@ public:
     virtual std::uint64_t peak_buffer_capacity() const noexcept = 0;
 };
 
-} // namespace dsdecomp::detail
+} // namespace dsdecompx::detail

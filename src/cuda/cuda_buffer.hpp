@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace dsdecomp::cuda {
+namespace dsdecompx::cuda {
 
 class DeviceBuffer {
 public:
@@ -56,4 +56,4 @@ private:
     std::uint64_t reallocations_ = 0;
 };
 
-} // namespace dsdecomp::cuda
+} // namespace dsdecompx::cuda

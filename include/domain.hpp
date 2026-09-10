@@ -2,7 +2,7 @@
 
 #include <array>
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 using Vec3d = std::array<double, 3>;
 using Vec3i = std::array<int, 3>;
@@ -29,4 +29,4 @@ struct HaloConfig {
     bool include_edges_and_corners = true;
 };
 
-} // namespace dsdecomp
+} // namespace dsdecompx

@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace dsdecomp::cuda {
+namespace dsdecompx::cuda {
 namespace {
 
 std::size_t grown_capacity(std::size_t current, std::size_t required) {
@@ -111,4 +111,4 @@ void PinnedBuffer::release() noexcept {
     capacity_bytes_ = 0;
 }
 
-} // namespace dsdecomp::cuda
+} // namespace dsdecompx::cuda

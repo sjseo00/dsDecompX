@@ -7,7 +7,7 @@
 
 #include <cstddef>
 
-namespace dsdecomp::cuda {
+namespace dsdecompx::cuda {
 
 void launch_pack_records(const ConstParticleView& particles,
                          const int* indices,
@@ -102,4 +102,4 @@ void launch_exclusive_scan(const unsigned int* counts,
                            std::size_t temporary_bytes,
                            cudaStream_t stream);
 
-} // namespace dsdecomp::cuda
+} // namespace dsdecompx::cuda

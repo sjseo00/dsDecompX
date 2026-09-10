@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 struct HaloResult {
     std::size_t ghost_count = 0;
@@ -178,4 +178,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-} // namespace dsdecomp
+} // namespace dsdecompx

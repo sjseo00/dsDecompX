@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 enum class BackendKind {
     Mpi,
@@ -26,4 +26,4 @@ const char* backend_selection_name(BackendSelection selection) noexcept;
 BackendSelection parse_backend_selection(std::string_view value);
 bool backend_compiled(BackendSelection selection) noexcept;
 
-} // namespace dsdecomp
+} // namespace dsdecompx

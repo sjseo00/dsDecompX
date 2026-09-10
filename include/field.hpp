@@ -6,7 +6,7 @@
 #include <string>
 #include <type_traits>
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 enum class MemorySpace : std::uint8_t {
     Host,
@@ -44,7 +44,7 @@ inline std::size_t field_type_size(FieldType type) {
     case FieldType::Float32: return sizeof(float);
     case FieldType::Float64: return sizeof(double);
     }
-    throw std::invalid_argument("dsDecomp: unsupported field type");
+    throw std::invalid_argument("dsDecompX: unsupported field type");
 }
 
 template<class T> struct FieldTypeOf;
@@ -146,7 +146,7 @@ inline ConstParticleView as_const_view(const ParticleView& source) noexcept {
 }
 
 // Stable wire record. Application particle storage remains non-owning;
-// dsDecomp owns only communication buffers containing these records.
+// dsDecompX owns only communication buffers containing these records.
 struct ParticleRecord {
     double x = 0.0, y = 0.0, z = 0.0;
     double vx = 0.0, vy = 0.0, vz = 0.0;
@@ -156,4 +156,4 @@ struct ParticleRecord {
     int global_id = 0;
 };
 
-} // namespace dsdecomp
+} // namespace dsdecompx

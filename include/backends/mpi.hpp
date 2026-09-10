@@ -5,7 +5,7 @@
 
 #include <mpi.h>
 
-namespace dsdecomp::mpi {
+namespace dsdecompx::mpi {
 
 enum class CudaAwareMode {
     Auto,
@@ -26,4 +26,4 @@ Backend make_backend(MPI_Comm communicator,
 // Best-effort discovery. Failure returns available=false and never throws.
 TopologyInfo discover_topology(MPI_Comm communicator) noexcept;
 
-} // namespace dsdecomp::mpi
+} // namespace dsdecompx::mpi

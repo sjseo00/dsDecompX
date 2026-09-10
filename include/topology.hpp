@@ -4,7 +4,7 @@
 
 #include <vector>
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 namespace detail {
 struct TopologyAccess;
@@ -38,4 +38,4 @@ private:
     std::vector<Neighbor> neighbors_;
 };
 
-} // namespace dsdecomp
+} // namespace dsdecompx

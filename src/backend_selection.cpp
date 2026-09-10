@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 const char* backend_selection_name(BackendSelection selection) noexcept {
     switch (selection) {
@@ -26,7 +26,7 @@ BackendSelection parse_backend_selection(std::string_view value) {
     if (normalized == "nccl") return BackendSelection::Nccl;
     if (normalized == "nvshmem") return BackendSelection::Nvshmem;
     throw std::invalid_argument(
-        "dsDecomp: BACKEND must be auto, mpi, nccl, or nvshmem");
+        "dsDecompX: BACKEND must be auto, mpi, nccl, or nvshmem");
 }
 
 bool backend_compiled(BackendSelection selection) noexcept {
@@ -50,4 +50,4 @@ bool backend_compiled(BackendSelection selection) noexcept {
     return false;
 }
 
-} // namespace dsdecomp
+} // namespace dsdecompx

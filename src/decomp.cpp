@@ -1,4 +1,4 @@
-#include "dsdecomp.hpp"
+#include "dsdecompx.hpp"
 
 #include "internal/backend.hpp"
 #include "internal/decomp_impl.hpp"
@@ -8,7 +8,7 @@
 #include <exception>
 #include <utility>
 
-namespace dsdecomp {
+namespace dsdecompx {
 
 Backend::Backend() noexcept = default;
 Backend::~Backend() = default;
@@ -28,7 +28,7 @@ Backend::operator bool() const noexcept {
 
 Decomposition::Decomposition(Config config, Backend backend) {
     if (!backend.implementation_) {
-        throw std::invalid_argument("dsDecomp: backend is not initialized");
+        throw std::invalid_argument("dsDecompX: backend is not initialized");
     }
     impl_ = std::make_unique<Impl>(std::move(config),
                                   std::move(backend.implementation_));
@@ -103,7 +103,7 @@ const GlobalDomain& Decomposition::global_domain() const noexcept {
 void Decomposition::update_domain(const GlobalDomain& domain) {
     if (domain.periodic != impl_->config.domain.periodic) {
         throw std::invalid_argument(
-            "dsDecomp: changing periodicity after topology creation requires reconstructing Decomp");
+            "dsDecompX: changing periodicity after topology creation requires reconstructing Decomp");
     }
     impl_->config.domain = domain;
     impl_->refresh_domain_geometry();
@@ -112,7 +112,7 @@ void Decomposition::update_domain(const GlobalDomain& domain) {
 
 void Decomposition::set_halo_width(double width) {
     if (width < 0.0) {
-        throw std::invalid_argument("dsDecomp: halo width cannot be negative");
+        throw std::invalid_argument("dsDecompX: halo width cannot be negative");
     }
     if (impl_->config.halo.width != width) {
         impl_->config.halo.width = width;
@@ -260,4 +260,4 @@ void Decomposition::reset_stats() noexcept {
 #endif
 }
 
-} // namespace dsdecomp
+} // namespace dsdecompx

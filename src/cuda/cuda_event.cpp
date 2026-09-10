@@ -3,7 +3,7 @@
 
 #include <utility>
 
-namespace dsdecomp::cuda {
+namespace dsdecompx::cuda {
 
 Event::Event(unsigned flags) {
     detail::check(cudaEventCreateWithFlags(&event_, flags), "cudaEventCreateWithFlags");
@@ -43,4 +43,4 @@ void Event::synchronize_host() const {
     detail::check(cudaEventSynchronize(event_), "cudaEventSynchronize");
 }
 
-} // namespace dsdecomp::cuda
+} // namespace dsdecompx::cuda

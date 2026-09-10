@@ -3,7 +3,7 @@
 
 #include <cub/device/device_scan.cuh>
 
-namespace dsdecomp::cuda {
+namespace dsdecompx::cuda {
 
 std::size_t prefix_scan_temporary_bytes(std::size_t count) {
     std::size_t bytes = 0;
@@ -24,4 +24,4 @@ void launch_exclusive_scan(const unsigned int* counts, unsigned int* offsets,
                   "launch CUB prefix scan");
 }
 
-} // namespace dsdecomp::cuda
+} // namespace dsdecompx::cuda

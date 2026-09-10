@@ -1,4 +1,4 @@
-#include "dsdecomp.hpp"
+#include "dsdecompx.hpp"
 
 #include "internal/decomp_impl.hpp"
 #include "internal/buffer_pool.hpp"
@@ -15,7 +15,7 @@
 #include <cuda_runtime_api.h>
 #endif
 
-namespace dsdecomp {
+namespace dsdecompx {
 namespace {
 
 constexpr int kForwardCountTagBase = 0;
@@ -60,11 +60,11 @@ void validate_fields(const ConstParticleView& particles) {
         if (field.name.empty() || !field.data || field.components==0 ||
             field.capacity<particles.count) {
             throw std::invalid_argument(
-                "dsDecomp: invalid or undersized custom particle field");
+                "dsDecompX: invalid or undersized custom particle field");
         }
         if (!names.insert(field.name).second) {
             throw std::invalid_argument(
-                "dsDecomp: duplicate custom particle field '"+field.name+"'");
+                "dsDecompX: duplicate custom particle field '"+field.name+"'");
         }
     }
 }
@@ -81,7 +81,7 @@ const ParticleFieldView& require_destination_field(
         found->components!=transfer.components || !found->data ||
         found->capacity<required) {
         throw std::invalid_argument(
-            "dsDecomp: missing, incompatible, or undersized output field '"+
+            "dsDecompX: missing, incompatible, or undersized output field '"+
             transfer.name+"'");
     }
     return *found;
@@ -123,12 +123,12 @@ void Decomposition::Impl::validate_owned_view(
     const ConstParticleView& particles) const {
     if (particles.memory_space != MemorySpace::Host) {
         throw std::invalid_argument(
-            "dsDecomp: this host packing operation requires Host particle memory");
+            "dsDecompX: this host packing operation requires Host particle memory");
     }
     if (particles.count == 0) return;
     if (!particles.x || !particles.y || !particles.z ||
         !particles.global_id) {
-        throw std::invalid_argument("dsDecomp: incomplete particle view");
+        throw std::invalid_argument("dsDecompX: incomplete particle view");
     }
 }
 
@@ -247,7 +247,7 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
     const ConstParticleView& owned_particles, ExecutionStream stream) {
     (void)stream;
     if (impl_->operation_active) {
-        throw std::logic_error("dsDecomp: an operation is already in flight");
+        throw std::logic_error("dsDecompX: an operation is already in flight");
     }
     impl_->operation_active = true;
 #if HAS_CUDA
@@ -292,22 +292,22 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
         if (owned_particles.field_count!=0) {
             impl_->operation_active=false;
             throw std::runtime_error(
-                "dsDecomp: custom fields currently require host particle memory");
+                "dsDecompX: custom fields currently require host particle memory");
         }
         if (owned_particles.memory_space != MemorySpace::CudaDevice &&
             owned_particles.memory_space != MemorySpace::CudaManaged) {
             impl_->operation_active = false;
-            throw std::invalid_argument("dsDecomp: unsupported particle memory space");
+            throw std::invalid_argument("dsDecompX: unsupported particle memory space");
         }
         if (!stream) {
             impl_->operation_active = false;
             throw std::invalid_argument(
-                "dsDecomp CUDA halo requires an explicit communication stream");
+                "dsDecompX CUDA halo requires an explicit communication stream");
         }
         if (!impl_->backend->supports_device_data_plane()) {
             impl_->operation_active = false;
             throw std::runtime_error(
-                "dsDecomp: selected backend cannot exchange GPU-resident buffers");
+                "dsDecompX: selected backend cannot exchange GPU-resident buffers");
         }
         if (owned_particles.count &&
             (!owned_particles.x || !owned_particles.y || !owned_particles.z ||
@@ -315,7 +315,7 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
              !owned_particles.mass || !owned_particles.charge ||
              !owned_particles.type || !owned_particles.global_id)) {
             impl_->operation_active = false;
-            throw std::invalid_argument("dsDecomp: incomplete CUDA particle view");
+            throw std::invalid_argument("dsDecompX: incomplete CUDA particle view");
         }
 
         try {
@@ -493,7 +493,7 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
         impl_->operation_active = false;
         (void)stream;
         throw std::invalid_argument(
-            "dsDecomp: CUDA particle view requires ENABLE_CUDA");
+            "dsDecompX: CUDA particle view requires ENABLE_CUDA");
 #endif
     }
     if (impl_->halo_plan_valid) {
@@ -542,7 +542,7 @@ void Decomposition::end_halo_exchange(HaloExchangeHandle& handle,
     if (!handle.active_ || handle.owner_ != this ||
         handle.generation_ != impl_->operation_generation ||
         !impl_->operation_active) {
-        throw std::logic_error("dsDecomp: invalid or stale halo exchange handle");
+        throw std::logic_error("dsDecompX: invalid or stale halo exchange handle");
     }
     const bool timed = impl_->timing_enabled || impl_->perf_enabled;
     const auto wait_start = timed ? std::chrono::steady_clock::now()
@@ -576,7 +576,7 @@ void Decomposition::end_halo_exchange(HaloExchangeHandle& handle,
                                            field.record_bytes;
                 if (field.receive[n].size()!=expected) {
                     throw std::runtime_error(
-                        "dsDecomp: custom halo field schema differs across ranks");
+                        "dsDecompX: custom halo field schema differs across ranks");
                 }
             }
         }
@@ -723,15 +723,15 @@ void Decomposition::unpack_device_halos(ParticleView destination,
                                         ExecutionStream stream) {
 #if HAS_CUDA
     if (!stream) throw std::invalid_argument(
-        "dsDecomp: device halo unpack requires an explicit stream");
+        "dsDecompX: device halo unpack requires an explicit stream");
     if (destination.memory_space != MemorySpace::CudaDevice &&
         destination.memory_space != MemorySpace::CudaManaged) {
-        throw std::invalid_argument("dsDecomp: device halo unpack needs device output");
+        throw std::invalid_argument("dsDecompX: device halo unpack needs device output");
     }
     std::size_t total=0;
     for (const DeviceHaloBuffer& buffer : impl_->device_halo_results) total+=buffer.count;
     if (destination_offset+total > destination.count) {
-        throw std::invalid_argument("dsDecomp: device halo output capacity is too small");
+        throw std::invalid_argument("dsDecompX: device halo output capacity is too small");
     }
     const cudaStream_t cuda_stream=static_cast<cudaStream_t>(stream);
     std::size_t offset=destination_offset;
@@ -743,7 +743,7 @@ void Decomposition::unpack_device_halos(ParticleView destination,
     impl_->cuda_execution->reuse_event_recorded = true;
 #else
     (void)destination; (void)destination_offset; (void)stream;
-    throw std::runtime_error("dsDecomp: CUDA execution layer is not compiled");
+    throw std::runtime_error("dsDecompX: CUDA execution layer is not compiled");
 #endif
 }
 
@@ -751,23 +751,23 @@ void Decomposition::reverse_halo(ParticleView particles,
                                  std::size_t owned_count,
                                  ExecutionStream stream) {
     if (impl_->operation_active) {
-        throw std::logic_error("dsDecomp: reverse halo cannot overlap an active operation");
+        throw std::logic_error("dsDecompX: reverse halo cannot overlap an active operation");
     }
     if (particles.memory_space == MemorySpace::CudaDevice ||
         particles.memory_space == MemorySpace::CudaManaged) {
 #if HAS_CUDA
         if (!stream) {
             throw std::invalid_argument(
-                "dsDecomp: device reverse halo requires an explicit stream");
+                "dsDecompX: device reverse halo requires an explicit stream");
         }
         if (impl_->backend->kind()==BackendKind::Nvshmem) {
             throw std::runtime_error(
-                "dsDecomp: GPU reverse halo is not yet available for NVSHMEM");
+                "dsDecompX: GPU reverse halo is not yet available for NVSHMEM");
         }
         const std::size_t ghost_count=total_received_halo_particles();
         if (particles.count<owned_count+ghost_count || !particles.fx ||
             !particles.fy || !particles.fz || !particles.global_id) {
-            throw std::invalid_argument("dsDecomp: invalid device reverse-halo view");
+            throw std::invalid_argument("dsDecompX: invalid device reverse-halo view");
         }
         auto& state=*impl_->cuda_execution;
         const auto& neighbors=impl_->topology.neighbors();
@@ -817,17 +817,17 @@ void Decomposition::reverse_halo(ParticleView particles,
         return;
 #else
         (void)stream;
-        throw std::runtime_error("dsDecomp: CUDA execution layer is not compiled");
+        throw std::runtime_error("dsDecompX: CUDA execution layer is not compiled");
 #endif
     }
     if (particles.memory_space != MemorySpace::Host) {
         throw std::invalid_argument(
-            "dsDecomp: reverse halo currently requires Host particle memory");
+            "dsDecompX: reverse halo currently requires Host particle memory");
     }
     const std::size_t ghost_count = total_received_halo_particles();
     if (particles.count < owned_count + ghost_count ||
         !particles.fx || !particles.fy || !particles.fz) {
-        throw std::invalid_argument("dsDecomp: invalid reverse-halo particle view");
+        throw std::invalid_argument("dsDecompX: invalid reverse-halo particle view");
     }
     ParticleFieldView force_fields[] = {
         {"__force_x",FieldType::Float64,1,particles.count,particles.fx},
@@ -896,22 +896,22 @@ void Decomposition::reverse_exchange(
     (void)stream;
     if (impl_->operation_active) {
         throw std::logic_error(
-            "dsDecomp: reverse exchange cannot overlap an active operation");
+            "dsDecompX: reverse exchange cannot overlap an active operation");
     }
     if (particles.memory_space!=MemorySpace::Host) {
         throw std::runtime_error(
-            "dsDecomp: generic reverse exchange currently requires host memory");
+            "dsDecompX: generic reverse exchange currently requires host memory");
     }
     const std::size_t ghost_count=total_received_halo_particles();
     if (particles.count<owned_count+ghost_count) {
         throw std::invalid_argument(
-            "dsDecomp: reverse exchange particle view is too small");
+            "dsDecompX: reverse exchange particle view is too small");
     }
     std::unordered_set<std::string> selected;
     for (const auto& specification : fields) {
         if (!selected.insert(specification.name).second) {
             throw std::invalid_argument(
-                "dsDecomp: duplicate reverse exchange field '"+
+                "dsDecompX: duplicate reverse exchange field '"+
                 specification.name+"'");
         }
         ParticleFieldView* begin=particles.fields;
@@ -925,7 +925,7 @@ void Decomposition::reverse_exchange(
             found->components==0 ||
             found->capacity<owned_count+ghost_count) {
             throw std::invalid_argument(
-                "dsDecomp: missing or undersized reverse exchange field '"+
+                "dsDecompX: missing or undersized reverse exchange field '"+
                 specification.name+"'");
         }
         const std::size_t record_bytes=found->record_bytes();
@@ -949,11 +949,11 @@ void Decomposition::reverse_exchange(
             const auto& indices=impl_->halo_plan[n].source_indices;
             if (receive[n].size()!=indices.size()*record_bytes) {
                 throw std::runtime_error(
-                    "dsDecomp: reverse field schema differs across ranks");
+                    "dsDecompX: reverse field schema differs across ranks");
             }
             reduce_field(receive[n],indices,*found,specification.operation);
         }
     }
 }
 
-} // namespace dsdecomp
+} // namespace dsdecompx

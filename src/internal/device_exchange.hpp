@@ -1,11 +1,11 @@
 #pragma once
 
-#include "dsdecomp.hpp"
+#include "dsdecompx.hpp"
 
 #include <cstddef>
 #include <vector>
 
-namespace dsdecomp::detail {
+namespace dsdecompx::detail {
 
 struct DeviceTransfer {
     int peer_rank = -1;
@@ -29,4 +29,4 @@ struct DeviceExchange {
     const char* operation = nullptr;
 };
 
-} // namespace dsdecomp::detail
+} // namespace dsdecompx::detail

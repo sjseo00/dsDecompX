@@ -20,7 +20,7 @@ particles
 The storage is non-owning. It must remain valid while `ParticleInfo` uses it,
 and `capacity` must accommodate owned plus ghost particles. Every MPI rank must
 register the same field names, scalar types, component counts, and order.
-dsDecomp checks this schema collectively before communication.
+dsDecompX checks this schema collectively before communication.
 
 Supported scalar types are 32- and 64-bit signed/unsigned integers, `float`,
 and `double`. A multi-component field uses contiguous AoS layout:
@@ -38,8 +38,8 @@ invent values for unused MD properties.
 ```cpp
 decomp.reverse_exchange(
     particles,
-    {{"pressure_contribution", dsdecomp::ReduceOp::Sum},
-     {"contact_temperature", dsdecomp::ReduceOp::Max}});
+    {{"pressure_contribution", dsdecompx::ReduceOp::Sum},
+     {"contact_temperature", dsdecompx::ReduceOp::Max}});
 ```
 
 `Sum`, `Min`, `Max`, and `Replace` are available. `reverse_halo()` remains as

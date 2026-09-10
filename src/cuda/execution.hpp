@@ -9,7 +9,7 @@
 
 #include <cstddef>
 
-namespace dsdecomp::cuda {
+namespace dsdecompx::cuda {
 
 class ExecutionState {
 public:
@@ -50,4 +50,4 @@ public:
     bool reuse_event_recorded = false;
 };
 
-} // namespace dsdecomp::cuda
+} // namespace dsdecompx::cuda

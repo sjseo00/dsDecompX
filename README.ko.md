@@ -1,8 +1,8 @@
-# dsDecomp 0.3
+# dsDecompX 0.3
 
 [English](README.md) | 한국어
 
-dsDecomp는 여러 CPU 또는 GPU가 시뮬레이션 공간을 나누어 처리할 때
+dsDecompX는 여러 CPU 또는 GPU가 시뮬레이션 공간을 나누어 처리할 때
 사용하는 domain decomposition 및 particle communication 라이브러리입니다.
 MD 편의 field는 유지하면서 DEM, SPH, PIC, Lagrangian particle tracking에
 필요한 사용자 정의 field도 지원합니다. 일반 사용자는 `<runtime.hpp>`
@@ -34,24 +34,24 @@ cmake --build build -j
 
 CUDA 빌드에서는 설치된 NCCL과 NVSHMEM을 자동으로 찾아 사용할 수 있게 만듭니다.
 
-dsDecomp만 사용해 CPU/GPU 및 strong/weak scaling을 측정하는 코드는 [examples/benchmark/README.md](examples/benchmark/README.md)를 참고하십시오.
+dsDecompX만 사용해 CPU/GPU 및 strong/weak scaling을 측정하는 코드는 [examples/benchmark/README.md](examples/benchmark/README.md)를 참고하십시오.
 
 ```cmake
-find_package(dsDecomp 0.3 REQUIRED CONFIG)
-target_link_libraries(my_particles PRIVATE dsdecomp::dsdecomp)
+find_package(dsDecompX 0.3 REQUIRED CONFIG)
+target_link_libraries(my_particles PRIVATE dsdecompx::dsdecompx)
 ```
 
 ## 가장 기본적인 사용 순서
 
 ```cpp
-dsdecomp::Config config;
+dsdecompx::Config config;
 config.domain.upper = {100.0, 100.0, 100.0};
 config.halo.width = cutoff + skin;
-config.execution = dsdecomp::ExecutionMode::Host; // 또는 Cuda
+config.execution = dsdecompx::ExecutionMode::Host; // 또는 Cuda
 
-dsdecomp::Decomp decomp(MPI_COMM_WORLD, config);
+dsdecompx::Decomp decomp(MPI_COMM_WORLD, config);
 constexpr std::size_t capacity = 2000;
-dsdecomp::ParticleInfo particles(1000);
+dsdecompx::ParticleInfo particles(1000);
 
 std::vector<double> temperature(capacity);
 std::vector<int> species(capacity);
@@ -68,7 +68,7 @@ decomp.exchange_halo(particles);
 decomp.reverse_halo(particles);
 // 또는 사용자 정의 ghost contribution을 owner에 reduction합니다.
 decomp.reverse_exchange(
-    particles, {{"temperature", dsdecomp::ReduceOp::Sum}});
+    particles, {{"temperature", dsdecompx::ReduceOp::Sum}});
 ```
 
 - `migrate()`는 자기 구역을 벗어난 입자를 새 담당 rank/GPU로 보냅니다.
@@ -86,7 +86,7 @@ application 데이터는 `add_field()`로 등록합니다.
 ### Particle 정보(CPU 메모리)를 새로 만들기
 
 ```cpp
-dsdecomp::ParticleInfo particles(1000);
+dsdecompx::ParticleInfo particles(1000);
 
 particles.x[0] = 1.0;
 particles.y[0] = 2.0;
@@ -100,8 +100,8 @@ particles.global_id[0] = 0;
 ### Particle 정보(CUDA 메모리)를 새로 만들기
 
 ```cpp
-auto particles = dsdecomp::ParticleInfo::allocate(
-    dsdecomp::MemorySpace::CudaDevice, 1000);
+auto particles = dsdecompx::ParticleInfo::allocate(
+    dsdecompx::MemorySpace::CudaDevice, 1000);
 
 double* d_x = particles.x_data();
 double* d_y = particles.y_data();
@@ -113,8 +113,8 @@ double* d_z = particles.z_data();
 ### 프로그램에 이미 있는 Particle 정보(CPU/CUDA 메모리) 사용하기
 
 ```cpp
-auto particles = dsdecomp::ParticleInfo::external(
-    dsdecomp::MemorySpace::CudaDevice,
+auto particles = dsdecompx::ParticleInfo::external(
+    dsdecompx::MemorySpace::CudaDevice,
     capacity, owned_count, ghost_count);
 
 particles
@@ -138,7 +138,7 @@ particles
     .add_field<double>("angular_velocity", omega, capacity, 3);
 
 decomp.reverse_exchange(
-    particles, {{"temperature", dsdecomp::ReduceOp::Sum}});
+    particles, {{"temperature", dsdecompx::ReduceOp::Sum}});
 ```
 
 기존 MD 편의 field는 그대로 유지하면서 DEM, SPH, PIC, Lagrangian particle
@@ -186,7 +186,7 @@ reduction 및 현재 CUDA 제한은
 | `has_out_of_domain_particles(particles)` | `particles`: 확인할 Particle 정보 | 모든 rank에 동일한 `bool` 값 | 어느 rank에서든 자기 구역을 벗어난 담당 입자가 있는지 확인합니다. |
 
 ```cpp
-dsdecomp::Decomp decomp(MPI_COMM_WORLD, config);
+dsdecompx::Decomp decomp(MPI_COMM_WORLD, config);
 int my_rank = decomp.topology().rank();
 int particle_rank = decomp.owner_rank({x, y, z});
 bool need_migration = decomp.has_out_of_domain_particles(particles);
@@ -244,7 +244,7 @@ CUDA의 기본 `Auto`는 NVSHMEM, NCCL, CUDA-aware MPI, 일반 MPI 순으로 가
 ```cpp
 auto result = decomp.exchange_halo(
     particles,
-    dsdecomp::HaloExchangeOptions{rebuild, stream});
+    dsdecompx::HaloExchangeOptions{rebuild, stream});
 ```
 
 | 입력값 | 반환값 |
@@ -276,11 +276,11 @@ auto result = decomp.exchange_halo(
 
 `exchange_halo()` 호출은 아래 함수 체인으로 처리됩니다.
 
-- 사용자 API 진입: `dsdecomp::Decomp::exchange_halo` (`src/runtime.cpp`)
-- 코어 시작/완료: `dsdecomp::Decomposition::begin_halo_exchange`, `dsdecomp::Decomposition::end_halo_exchange` (`src/halo.cpp`)
-- Host 경계 선별/패킹: `dsdecomp::Decomposition::rebuild_halo_plan`, `dsdecomp::Decomposition::refresh_halo_buffers` (`src/halo.cpp`)
-- Host 이웃 레코드 교환: `dsdecomp::detail::MpiBackend::begin_exchange_records`, `dsdecomp::detail::MpiBackend::end_exchange_records` (`src/backends/mpi_backend.cpp`)
-- Device 경로 시작/완료: `dsdecomp::detail::Backend::begin_device_exchange`, `dsdecomp::detail::Backend::end_device_exchange` 구현체 (`src/backends/*`)
+- 사용자 API 진입: `dsdecompx::Decomp::exchange_halo` (`src/runtime.cpp`)
+- 코어 시작/완료: `dsdecompx::Decomposition::begin_halo_exchange`, `dsdecompx::Decomposition::end_halo_exchange` (`src/halo.cpp`)
+- Host 경계 선별/패킹: `dsdecompx::Decomposition::rebuild_halo_plan`, `dsdecompx::Decomposition::refresh_halo_buffers` (`src/halo.cpp`)
+- Host 이웃 레코드 교환: `dsdecompx::detail::MpiBackend::begin_exchange_records`, `dsdecompx::detail::MpiBackend::end_exchange_records` (`src/backends/mpi_backend.cpp`)
+- Device 경로 시작/완료: `dsdecompx::detail::Backend::begin_device_exchange`, `dsdecompx::detail::Backend::end_device_exchange` 구현체 (`src/backends/*`)
 
 backend별 `exchange_halo` 데이터 경로 함수는 다음과 같습니다.
 
@@ -291,9 +291,9 @@ backend별 `exchange_halo` 데이터 경로 함수는 다음과 같습니다.
 
 `migrate()`와 `reverse_halo()`의 핵심 구현 함수명은 아래와 같습니다.
 
-- `migrate()`: `dsdecomp::Decomp::migrate` (`src/runtime.cpp`), `dsdecomp::Decomposition::migrate_particles` (`src/migration.cpp`)
-- `reverse_halo()`: `dsdecomp::Decomp::reverse_halo` (`src/runtime.cpp`), `dsdecomp::Decomposition::reverse_halo` (`src/halo.cpp`)
-- Host force 환원 경로: `dsdecomp::Decomposition::reverse_exchange` (`src/halo.cpp`)
+- `migrate()`: `dsdecompx::Decomp::migrate` (`src/runtime.cpp`), `dsdecompx::Decomposition::migrate_particles` (`src/migration.cpp`)
+- `reverse_halo()`: `dsdecompx::Decomp::reverse_halo` (`src/runtime.cpp`), `dsdecompx::Decomposition::reverse_halo` (`src/halo.cpp`)
+- Host force 환원 경로: `dsdecompx::Decomposition::reverse_exchange` (`src/halo.cpp`)
 
 ### `reverse_halo()`
 
@@ -320,8 +320,8 @@ CUDA에서는 NCCL 또는 CUDA-aware MPI를 사용하면 힘 데이터를 GPU �
 ```cpp
 decomp.reverse_exchange(
     particles,
-    {{"density_contribution", dsdecomp::ReduceOp::Sum},
-     {"contact_temperature", dsdecomp::ReduceOp::Max}});
+    {{"density_contribution", dsdecompx::ReduceOp::Sum},
+     {"contact_temperature", dsdecompx::ReduceOp::Max}});
 ```
 
 `reverse_exchange()`는 ghost particle에서 계산한 값을 원래 particle의
@@ -335,7 +335,7 @@ owner rank로 돌려보낸 뒤 지정된 reduction을 적용합니다.
 | `ReduceOp::Replace` | 결정적인 receive 순서에 따라 owner 값을 교체합니다. |
 
 대상 field는 먼저 `add_field()`로 등록해야 합니다. 모든 MPI rank에서 field
-이름, scalar type, component 수와 등록 순서가 같아야 하며 dsDecomp가 이를
+이름, scalar type, component 수와 등록 순서가 같아야 하며 dsDecompX가 이를
 collective하게 검증합니다. 등록된 메모리는 사용하는 동안 유효해야 하고
 `owned_count + ghost_count`만큼의 capacity를 가져야 합니다.
 
@@ -349,8 +349,8 @@ NCCL, NVSHMEM 경로는 그대로 유지됩니다. CUDA custom field는 조용�
 CPU와 함수 이름은 같고 CUDA stream만 추가합니다.
 
 ```cpp
-config.execution = dsdecomp::ExecutionMode::Cuda;
-dsdecomp::Decomp decomp(MPI_COMM_WORLD, config);
+config.execution = dsdecompx::ExecutionMode::Cuda;
+dsdecompx::Decomp decomp(MPI_COMM_WORLD, config);
 
 decomp.migrate(particles, stream);
 decomp.exchange_halo(particles, {true, stream});
@@ -410,9 +410,9 @@ for (const auto& neighbor : topology.neighbors()) {
 ## `choose_process_grid()`
 
 ```cpp
-auto grid = dsdecomp::choose_process_grid(
+auto grid = dsdecompx::choose_process_grid(
     mpi_size, domain_shape, topology_info,
-    dsdecomp::GridPolicy::Balanced);
+    dsdecompx::GridPolicy::Balanced);
 ```
 
 `choose_process_grid()`는 MPI rank를 x, y, z 방향으로 몇 개씩 배치할지 계산해서 `GridShape`으로 반환합니다. `Decomp`를 만들기 전에 예상 배치를 확인할 때 사용합니다.
@@ -449,10 +449,10 @@ decomp.reset_stats();
 |---|---|---|---|
 | `parse_backend_selection(text)` | `text`: `"auto"`, `"mpi"`, `"nccl"`, `"nvshmem"` 중 하나 | `BackendSelection` | 문자열을 backend 선택값으로 바꿉니다. |
 | `backend_selection_name(value)` | `value`: `BackendSelection` | backend 이름 문자열 | backend 선택값을 문자열로 바꿉니다. |
-| `backend_compiled(value)` | `value`: 확인할 `BackendSelection` | `bool` | 해당 backend가 현재 dsDecomp 빌드에 포함돼 있는지 확인합니다. |
+| `backend_compiled(value)` | `value`: 확인할 `BackendSelection` | `bool` | 해당 backend가 현재 dsDecompX 빌드에 포함돼 있는지 확인합니다. |
 | `GridShape::as_array()` | 없음 | `{px, py, pz}` | x/y/z 방향 rank 수를 한 묶음으로 반환합니다. |
 | `SampleAggregate::add(value)` | `value`: 추가할 측정값 | 없음 | 측정 횟수, 합계, 최솟값, 최댓값을 갱신합니다. |
-| `version_string` | 없음 | 버전 문자열 | 현재 dsDecomp 버전을 제공합니다. |
+| `version_string` | 없음 | 버전 문자열 | 현재 dsDecompX 버전을 제공합니다. |
 
 이 함수들은 설정 파일 처리, 진단, 성능 비교 도구를 만드는 경우에 사용합니다.
 
@@ -465,7 +465,7 @@ decomp.reset_stats();
 | `ParticleInfo(owned, ghosts, view)` | `owned`: 담당 입자 수, `ghosts`: 받은 입자 수, `view`: Particle 정보의 메모리 주소와 크기 | 새 `ParticleInfo` 객체 | 저수준 메모리 정보를 한 번에 등록합니다. |
 | `ParticleInfo(owned, ghosts, provider)` | 담당/ghost 입자 수와 메모리 관리 객체 | 새 `ParticleInfo` 객체 | Particle 정보 메모리를 자동으로 늘릴 외부 객체를 연결합니다. |
 | `reset_view(view)` | `view`: 바뀐 메모리 주소와 크기 | 없음 | 외부 Particle 정보의 메모리 주소를 갱신합니다. |
-| `Provider::particle_info_view(minimum)` | `minimum`: 필요한 최소 입자 수 | `ParticleView` | 현재 Particle 정보의 메모리 주소와 크기를 dsDecomp에 전달합니다. |
+| `Provider::particle_info_view(minimum)` | `minimum`: 필요한 최소 입자 수 | `ParticleView` | 현재 Particle 정보의 메모리 주소와 크기를 dsDecompX에 전달합니다. |
 | `Provider::resize_particle_info(required, preserve)` | `required`: 필요한 크기, `preserve`: 유지할 입자 수 | `StorageResizeResult` | 메모리를 늘리고 새 주소와 실제 확장 여부를 전달합니다. |
 
 ## 코드 예제
@@ -475,7 +475,7 @@ decomp.reset_stats();
 ### CPU 예제 1: Particle 정보(CPU 메모리)를 직접 만들기
 
 ```cpp
-dsdecomp::ParticleInfo particles(1000);
+dsdecompx::ParticleInfo particles(1000);
 
 for (std::size_t i = 0; i < particles.owned_count(); ++i) {
     particles.x[i] = initial_x(i);
@@ -500,8 +500,8 @@ std::array<std::vector<int>, 2> integers;
 for (auto& field : values) field.resize(capacity);
 for (auto& field : integers) field.resize(capacity);
 
-auto particles = dsdecomp::ParticleInfo::external(
-    dsdecomp::MemorySpace::Host, capacity, owned);
+auto particles = dsdecompx::ParticleInfo::external(
+    dsdecompx::MemorySpace::Host, capacity, owned);
 particles
     .positions(values[0].data(), values[1].data(), values[2].data())
     .velocities(values[3].data(), values[4].data(), values[5].data())
@@ -519,8 +519,8 @@ decomp.exchange_halo(particles);
 cudaStream_t stream;
 cudaStreamCreate(&stream);
 
-auto particles = dsdecomp::ParticleInfo::allocate(
-    dsdecomp::MemorySpace::CudaDevice, 1000);
+auto particles = dsdecompx::ParticleInfo::allocate(
+    dsdecompx::MemorySpace::CudaDevice, 1000);
 
 initialize_particles_on_gpu(particles, stream);
 
@@ -544,8 +544,8 @@ for (auto& field : values)
 for (auto& field : integers)
     cudaMalloc(&field, capacity * sizeof(int));
 
-auto particles = dsdecomp::ParticleInfo::external(
-    dsdecomp::MemorySpace::CudaDevice, capacity, owned);
+auto particles = dsdecompx::ParticleInfo::external(
+    dsdecompx::MemorySpace::CudaDevice, capacity, owned);
 particles
     .positions(values[0], values[1], values[2])
     .velocities(values[3], values[4], values[5])

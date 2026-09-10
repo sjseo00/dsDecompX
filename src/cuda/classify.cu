@@ -3,7 +3,7 @@
 
 #include <cmath>
 
-namespace dsdecomp::cuda {
+namespace dsdecompx::cuda {
 namespace {
 
 struct DeviceDomain {
@@ -56,4 +56,4 @@ void launch_classify_destinations(const ConstParticleView& particles,
     detail::check(cudaGetLastError(), "launch classify kernel");
 }
 
-} // namespace dsdecomp::cuda
+} // namespace dsdecompx::cuda

@@ -2,7 +2,7 @@
 
 The application initializes MPI, creates one `Decomp`, then creates persistent
 halo and migration plans. It exposes owned particle arrays through non-owning
-`ConstParticleView` objects. dsDecomp owns only packed communication/results.
+`ConstParticleView` objects. dsDecompX owns only packed communication/results.
 
 After integration, call migration if particles may have crossed local bounds;
 replace application-owned storage with the complete migration result. Invalidate

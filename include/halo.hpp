@@ -1,2 +1,2 @@
 #pragma once
-#include "dsdecompx.hpp"
+#include "decomposition.hpp"

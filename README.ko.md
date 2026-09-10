@@ -5,7 +5,7 @@
 dsDecompX는 여러 CPU 또는 GPU가 시뮬레이션 공간을 나누어 처리할 때
 사용하는 domain decomposition 및 particle communication 라이브러리입니다.
 MD 편의 field는 유지하면서 DEM, SPH, PIC, Lagrangian particle tracking에
-필요한 사용자 정의 field도 지원합니다. 일반 사용자는 `<runtime.hpp>`
+필요한 사용자 정의 field도 지원합니다. 일반 사용자는 `<dsdecompx.hpp>`
 하나만 include하면 됩니다.
 
 핵심 기능은 다음과 같습니다.

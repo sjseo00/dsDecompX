@@ -1,6 +1,6 @@
-#include "runtime.hpp"
-
 #include "dsdecompx.hpp"
+
+#include "decomposition.hpp"
 #include "backends/mpi.hpp"
 #if HAS_NCCL
 #include "backends/nccl.hpp"

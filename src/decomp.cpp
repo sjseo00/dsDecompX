@@ -1,4 +1,4 @@
-#include "dsdecompx.hpp"
+#include "decomposition.hpp"
 
 #include "internal/backend.hpp"
 #include "internal/decomp_impl.hpp"

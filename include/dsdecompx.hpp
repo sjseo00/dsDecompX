@@ -1,145 +1,171 @@
 #pragma once
 
-#include "backend.hpp"
-#include "backend_selection.hpp"
 #include "config.hpp"
-#include "domain.hpp"
 #include "field.hpp"
-#include "grid.hpp"
 #include "perf.hpp"
 #include "topology.hpp"
-#include "version.hpp"
 
-#include <array>
+#include <mpi.h>
+
 #include <cstddef>
 #include <memory>
-#include <cstdint>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace dsdecompx {
 
-struct HaloPlanEntry {
-    int peer_rank = -1;
-    Vec3i direction{0, 0, 0};
-    Vec3d periodic_shift{0.0, 0.0, 0.0};
-    std::vector<int> source_indices;
-    std::size_t receive_count = 0;
+struct HaloResult {
+    std::size_t ghost_count = 0;
+    bool layout_changed = false;
+    bool storage_reallocated = false;
 };
 
-struct HaloExchangeTimings {
-    double pack_seconds = 0.0;
-    double communication_seconds = 0.0;
-    double interior_compute_seconds = 0.0;
-    double wait_seconds = 0.0;
-    double unpack_seconds = 0.0;
-    double boundary_compute_seconds = 0.0;
-    double total_seconds = 0.0;
+struct HaloExchangeOptions {
+    bool rebuild = false;
+    ExecutionStream stream = nullptr;
 };
 
-struct DeviceHaloBuffer {
-    int peer_rank = -1;
-    const ParticleRecord* data = nullptr;
-    std::size_t count = 0;
+struct StorageResizeResult {
+    ParticleView view;
+    bool reallocated = false;
 };
 
-struct DeviceParticleBuffer {
-    const ParticleRecord* data = nullptr;
-    std::size_t count = 0;
-};
-
-class Decomposition;
-
-class HaloExchangeHandle {
+// Particle storage used by every Decomp operation. Constructing with a count
+// creates host arrays. Constructing with a view/provider uses existing arrays.
+class ParticleInfo {
 public:
-    HaloExchangeHandle() noexcept = default;
-    ~HaloExchangeHandle();
+    class Provider {
+    public:
+        virtual ~Provider() = default;
+        virtual ParticleView particle_info_view(std::size_t minimum) = 0;
+        virtual StorageResizeResult resize_particle_info(
+            std::size_t required, std::size_t preserve) = 0;
+    };
 
-    HaloExchangeHandle(HaloExchangeHandle&& other) noexcept;
-    HaloExchangeHandle& operator=(HaloExchangeHandle&& other) noexcept;
+    ParticleInfo() = default;
+    explicit ParticleInfo(std::size_t owned) { resize_owned(owned); }
+    ~ParticleInfo();
+    ParticleInfo(ParticleInfo&& other) noexcept;
+    ParticleInfo& operator=(ParticleInfo&& other) noexcept;
+    ParticleInfo(const ParticleInfo&) = delete;
+    ParticleInfo& operator=(const ParticleInfo&) = delete;
 
-    HaloExchangeHandle(const HaloExchangeHandle&) = delete;
-    HaloExchangeHandle& operator=(const HaloExchangeHandle&) = delete;
+    ParticleInfo(std::size_t owned, std::size_t ghosts, ParticleView storage);
+    ParticleInfo(std::size_t owned, std::size_t ghosts, Provider& provider);
 
-    bool active() const noexcept { return active_; }
+    static ParticleInfo allocate(MemorySpace memory_space,
+                                 std::size_t owned);
+    static ParticleInfo external(MemorySpace memory_space,
+                                 std::size_t capacity,
+                                 std::size_t owned,
+                                 std::size_t ghosts = 0);
+    ParticleInfo& positions(double* x, double* y, double* z) noexcept;
+    ParticleInfo& velocities(double* vx, double* vy, double* vz) noexcept;
+    ParticleInfo& forces(double* fx, double* fy, double* fz) noexcept;
+    ParticleInfo& properties(double* mass, double* charge,
+                             int* type, int* global_id) noexcept;
+    // Register a non-owning application field. Storage must remain valid and
+    // large enough for capacity particles through communication operations.
+    template<class T>
+    ParticleInfo& add_field(std::string name, T* data,
+                            std::size_t capacity = 0,
+                            std::size_t components = 1) {
+        ParticleFieldView field{std::move(name), field_type_v<T>, components,
+                                capacity ? capacity : this->capacity(), data};
+        return add_field_view(std::move(field));
+    }
+
+    std::vector<double> x, y, z;
+    std::vector<double> vx, vy, vz;
+    std::vector<double> fx, fy, fz;
+    std::vector<double> mass, charge;
+    std::vector<int> type, global_id;
+    std::size_t num_particles = 0;
+
+    void resize(std::size_t count);
+
+    std::size_t owned_count() const noexcept { return owned_count_; }
+    std::size_t ghost_count() const noexcept { return ghost_count_; }
+    std::size_t size() const noexcept { return owned_count_ + ghost_count_; }
+    std::size_t capacity() const noexcept;
+    MemorySpace memory_space() const noexcept;
+    bool uses_external_memory() const noexcept {
+        return external_ && !owns_device_memory_;
+    }
+
+    double* x_data() noexcept;
+    double* y_data() noexcept;
+    double* z_data() noexcept;
+    double* vx_data() noexcept;
+    double* vy_data() noexcept;
+    double* vz_data() noexcept;
+    double* fx_data() noexcept;
+    double* fy_data() noexcept;
+    double* fz_data() noexcept;
+    double* mass_data() noexcept;
+    double* charge_data() noexcept;
+    int* type_data() noexcept;
+    int* global_id_data() noexcept;
+
+    void resize_owned(std::size_t count);
+    void reset_counts(std::size_t owned, std::size_t ghosts = 0);
+
+    void reset_view(ParticleView storage);
 
 private:
-    friend class Decomposition;
-    HaloExchangeHandle(Decomposition* owner, std::uint64_t generation) noexcept
-        : owner_(owner), generation_(generation), active_(true) {}
+    friend class Decomp;
+    ConstParticleView read_view(std::size_t count) const;
+    ConstParticleView host_const_view(std::size_t count) const;
+    ParticleView host_view(std::size_t count);
+    StorageResizeResult resize_storage(std::size_t required,
+                                       std::size_t preserve);
+    void commit_counts(std::size_t owned, std::size_t ghosts) noexcept;
+    void release_device_memory() noexcept;
+    ParticleInfo& add_field_view(ParticleFieldView field);
 
-    Decomposition* owner_ = nullptr;
-    std::uint64_t generation_ = 0;
-    bool active_ = false;
+    bool external_ = false;
+    bool owns_device_memory_ = false;
+    std::size_t owned_count_ = 0;
+    std::size_t ghost_count_ = 0;
+    std::vector<ParticleFieldView> fields_;
+    ParticleView storage_;
+    Provider* provider_ = nullptr;
 };
 
-class Decomposition {
+// The sole normal user entry point. Host and device storage use the same
+// methods; device callers only add their execution stream.
+class Decomp {
 public:
-    Decomposition(Config config, Backend backend);
-    ~Decomposition();
+    Decomp(MPI_Comm communicator, Config config = {});
+    ~Decomp();
 
-    Decomposition(Decomposition&&) noexcept;
-    Decomposition& operator=(Decomposition&&) noexcept;
-
-    Decomposition(const Decomposition&) = delete;
-    Decomposition& operator=(const Decomposition&) = delete;
+    Decomp(Decomp&&) noexcept;
+    Decomp& operator=(Decomp&&) noexcept;
+    Decomp(const Decomp&) = delete;
+    Decomp& operator=(const Decomp&) = delete;
 
     const Topology& topology() const noexcept;
-    const GlobalDomain& global_domain() const noexcept;
+    BackendKind backend_kind() const noexcept;
+    int owner_rank(const Vec3d& position) const;
+    bool any_rank_true(bool local_flag) const;
+    bool has_out_of_domain_particles(const ParticleInfo& particles) const;
 
     void update_domain(const GlobalDomain& domain);
     void set_halo_width(double width);
+    double halo_width() const noexcept;
+    void invalidate_halo() noexcept;
 
-    int rank_at(const Vec3i& coordinates) const;
-    int owner_rank(const Vec3d& position) const;
-
-    void invalidate_halo_plan() noexcept;
-    bool halo_plan_valid() const noexcept;
-
-    void rebuild_halo_plan(const ConstParticleView& owned_particles);
-    void refresh_halo_buffers(const ConstParticleView& owned_particles);
-    // One Decomposition supports one in-flight operation. The handle must be
-    // completed explicitly; destroying an active handle never synchronizes and
-    // terminates the process to prevent use-after-free of MPI/CUDA resources.
-    HaloExchangeHandle begin_halo_exchange(
-        const ConstParticleView& owned_particles,
-        ExecutionStream stream = nullptr);
-    void end_halo_exchange(HaloExchangeHandle& handle,
-                           ExecutionStream stream = nullptr);
-    void exchange_halo(const ConstParticleView& owned_particles);
-
-    void reverse_halo(ParticleView particles, std::size_t owned_count,
+    HaloResult exchange_halo(ParticleInfo& particles,
+                             HaloExchangeOptions options = {});
+    MigrationResult migrate(ParticleInfo& particles,
+                            ExecutionStream stream = nullptr);
+    void reverse_halo(ParticleInfo& particles,
                       ExecutionStream stream = nullptr);
     void reverse_exchange(
-        ParticleView particles, std::size_t owned_count,
+        ParticleInfo& particles,
         const std::vector<ReverseExchangeField>& fields,
         ExecutionStream stream = nullptr);
-
-    MigrationResult migrate_particles(const ConstParticleView& owned_particles,
-                                      ExecutionStream stream = nullptr);
-    const std::vector<ParticleRecord>& migrated_owned_particles() const noexcept;
-    DeviceParticleBuffer migrated_owned_device_particles() const noexcept;
-    void unpack_migrated_device_particles(ParticleView destination,
-                                           ExecutionStream stream);
-    void unpack_migrated_fields(ParticleView destination);
-
-    std::size_t total_received_halo_particles() const noexcept;
-
-    const std::vector<std::vector<ParticleRecord>>& received_halos() const noexcept;
-    const std::vector<DeviceHaloBuffer>& received_device_halos() const noexcept;
-    void unpack_device_halos(ParticleView destination,
-                             std::size_t destination_offset,
-                             ExecutionStream stream);
-    void unpack_halo_fields(ParticleView destination,
-                            std::size_t destination_offset);
-    const std::vector<HaloPlanEntry>& halo_plan() const noexcept;
-
-    bool cuda_aware_mpi_enabled() const noexcept;
-    BackendKind backend_kind() const noexcept;
-
-    void set_timing_enabled(bool enabled) noexcept;
-    void record_overlap_compute_times(double interior_seconds,
-                                      double boundary_seconds) noexcept;
-    const HaloExchangeTimings& last_halo_timings() const noexcept;
 
     void set_performance_counters_enabled(bool enabled,
                                           bool neighbor_detail = false) noexcept;

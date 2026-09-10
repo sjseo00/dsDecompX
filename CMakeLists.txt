@@ -143,7 +143,7 @@ install(TARGETS dsdecompx
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 install(FILES
-    include/runtime.hpp
+    include/dsdecompx.hpp
     include/config.hpp
     include/domain.hpp
     include/field.hpp

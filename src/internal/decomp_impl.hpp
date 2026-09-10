@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dsdecompx.hpp"
+#include "decomposition.hpp"
 #include "internal/backend.hpp"
 #include "internal/buffer_pool.hpp"
 

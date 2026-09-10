@@ -6,7 +6,7 @@ dsDecompX is a domain-decomposition and particle-communication library for
 simulations in which multiple CPUs or GPUs divide the simulation space. It
 keeps MD convenience fields while supporting application-defined fields for
 DEM, SPH, PIC, and Lagrangian particle tracking. Normal users only need to
-include `<runtime.hpp>`.
+include `<dsdecompx.hpp>`.
 
 Core operations are:
 

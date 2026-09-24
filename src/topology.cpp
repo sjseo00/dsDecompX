@@ -59,13 +59,24 @@ void Decomposition::Impl::refresh_domain_geometry() {
     auto& coordinates = detail::TopologyAccess::coordinates(topology);
     auto& local_domain = detail::TopologyAccess::local_domain(topology);
     auto& neighbors = detail::TopologyAccess::neighbors(topology);
+    auto& axis_cuts = detail::TopologyAccess::axis_cuts(topology);
     for (int axis = 0; axis < 3; ++axis) {
         const double global_lower = config.domain.lower[axis];
         const double global_upper = config.domain.upper[axis];
         const double extent = global_upper - global_lower;
-        const double cell = extent / dimensions[axis];
-        local_domain.lower[axis] = global_lower + coordinates[axis] * cell;
-        local_domain.upper[axis] = local_domain.lower[axis] + cell;
+        if (axis_cuts[axis].size() !=
+            static_cast<std::size_t>(dimensions[axis] + 1)) {
+            axis_cuts[axis].resize(static_cast<std::size_t>(dimensions[axis] + 1));
+            for (int i = 0; i <= dimensions[axis]; ++i) {
+                axis_cuts[axis][static_cast<std::size_t>(i)] =
+                    global_lower + extent * static_cast<double>(i) /
+                                       static_cast<double>(dimensions[axis]);
+            }
+        }
+        local_domain.lower[axis] =
+            axis_cuts[axis][static_cast<std::size_t>(coordinates[axis])];
+        local_domain.upper[axis] =
+            axis_cuts[axis][static_cast<std::size_t>(coordinates[axis] + 1)];
     }
 
     neighbors.clear();
@@ -81,6 +92,40 @@ void Decomposition::Impl::refresh_domain_geometry() {
                 }
 
                 const Vec3i direction{dx, dy, dz};
+                // An axis with dimensions[axis] == 1 has a single rank
+                // spanning its entire (periodic) extent, so stepping along
+                // it never leaves this rank. If this direction moves along
+                // any such axis at all, skip it entirely rather than
+                // collapsing just that axis and keeping the rest: a
+                // single-axis (face) direction along an unsplit axis
+                // degenerates to this same rank with zero shift, which is
+                // not a valid halo neighbor and would round-trip this
+                // rank's own atoms through the halo pipeline as
+                // self-ghosts -- double-counted against the very same
+                // (already local) atoms by the CPU force kernels'
+                // unconditional minimum-image convention. A multi-axis
+                // (edge/corner) direction that also moves along an unsplit
+                // axis would, after dropping that axis's contribution,
+                // duplicate a lower-dimensional direction that this same
+                // triple loop already enumerates on its own (e.g. (1,1,0)
+                // with y unsplit reduces to (1,0,0), which is generated
+                // separately) -- and the local rank's ghost-selection for
+                // that lower-dimensional neighbor already spans this rank's
+                // full extent along the unsplit axis, so no coverage is
+                // lost by skipping the redundant corner/edge case. This
+                // mirrors the identical dims[axis] == 1 skip in grid.cpp's
+                // process-grid cost estimator.
+                bool touches_unsplit_axis = false;
+                for (int axis = 0; axis < 3; ++axis) {
+                    if (direction[axis] != 0 && dimensions[axis] == 1) {
+                        touches_unsplit_axis = true;
+                        break;
+                    }
+                }
+                if (touches_unsplit_axis) {
+                    continue;
+                }
+
                 Vec3i neighbor_coordinates{
                     coordinates[0] + dx,
                     coordinates[1] + dy,

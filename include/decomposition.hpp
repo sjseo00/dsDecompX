@@ -88,6 +88,8 @@ public:
 
     void update_domain(const GlobalDomain& domain);
     void set_halo_width(double width);
+    void set_axis_cuts(const std::array<std::vector<double>, 3>& cuts);
+    GridPolicy grid_policy() const noexcept;
 
     int rank_at(const Vec3i& coordinates) const;
     int owner_rank(const Vec3d& position) const;

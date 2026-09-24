@@ -23,7 +23,10 @@ struct DomainShape {
 enum class GridPolicy {
     Manual,
     Balanced,
-    TopologyAware
+    TopologyAware,
+    // Select a balanced Cartesian grid initially, then allow its axis cut
+    // planes to move at runtime according to measured per-rank work.
+    Dynamic
 };
 
 struct TopologyInfo {

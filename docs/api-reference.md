@@ -277,6 +277,10 @@ The default communication setting for a CUDA build is `Auto`. Normal users do no
 | `halo.include_edges_and_corners` | When `true`, also communicates with edge and corner neighbors, not only face neighbors. |
 | `grid_policy` | Chooses whether rank placement is manual, based on domain dimensions, or based on node connectivity. |
 | `topology_info` | Supplies node information used by `TopologyAware` placement. |
+| `dynamic.interval` | With `GridPolicy::Dynamic`, automatically rebalances every N `migrate()` calls. Zero disables automatic rebalancing. |
+| `dynamic.imbalance_threshold` | Minimum `max(work)/average(work)` that triggers an automatic boundary update. Default: `1.10`. |
+| `dynamic.relaxation` | Fraction of the estimated cut-plane movement applied at one update. Default: `0.5`. |
+| `dynamic.minimum_cell_fraction` | Minimum subdomain width relative to a uniform cell. Default: `0.10`. |
 | `execution` | Use `Host` for Particle data (CPU memory) and `Cuda` for Particle data (CUDA memory). |
 
 A CUDA-enabled library defaults to `Cuda`. A CPU-only library defaults to `Host`.
@@ -305,6 +309,7 @@ const auto& topology = decomp.topology();
 | `coordinates()` | None | `{x position, y position, z position}` | Position of this rank in the rank placement. |
 | `local_domain()` | None | Beginning and end of this rank's region | Space assigned to this rank. |
 | `neighbors()` | None | List of `Neighbor` objects | Ranks that share a boundary with this rank. |
+| `axis_cuts()` | None | Three arrays of cut positions | Current x/y/z subdomain boundaries, including global endpoints. |
 
 ```cpp
 auto local_box = topology.local_domain();
@@ -330,12 +335,55 @@ auto grid = dsdecompx::choose_process_grid(
 - `Manual`: uses user-provided `px`, `py`, and `pz`.
 - `Balanced`: makes region sizes similar based on the x, y, and z lengths.
 - `TopologyAware`: also considers the cost of within-node and between-node communication.
+- `Dynamic`: starts with the `Balanced` grid shape and permits nonuniform axis
+  cut planes to be moved by automatic or explicit load balancing.
 
-dsDecompX currently only performs uniform, orthogonal Cartesian decomposition:
+All policies use an orthogonal Cartesian topology. `Manual`, `Balanced`, and
+`TopologyAware` use uniform cells. `Dynamic` retains the same `(px, py, pz)`
+topology and neighbors but makes cell widths nonuniform:
 
 - Default `Manual`: leaves the grid shape to MPI's `MPI_Dims_create` by passing `dimensions={0,0,0}`.
 - `GRID_POLICY=balanced`: chooses `(px, py, pz)` from the box aspect ratio and surface-area-to-volume ratio.
 - `GRID_POLICY=topology`: adds within-node/between-node communication weights on top of the above criteria.
+- `GRID_POLICY=dynamic`: initially uses the balanced shape, then rebalances on
+  `migrate()` using owned-particle count as the default work estimate.
+
+## Dynamic load balancing and `rebalance()`
+
+`GridPolicy::Dynamic` performs a collective workload check before configured
+`migrate()` calls. Each rank contributes its owned-particle count. dsDecompX
+aggregates work by Cartesian slab, estimates equal-work x/y/z cut positions,
+applies relaxation and minimum-width constraints, invalidates the halo plan,
+and migrates particles using the new ownership boundaries. Host and CUDA
+migration use the same cuts; CUDA uploads the cut arrays to the supplied stream.
+The minimum width is also clamped to at least the halo width so a 26-neighbor
+exchange never needs to skip across an intermediate subdomain.
+
+Applications with a better cost metric, such as neighbor-pair count or measured
+kernel time, can request a collective rebalance explicitly:
+
+```cpp
+dsdecompx::RebalanceOptions options;
+options.local_work = measured_force_seconds; // per-rank, non-negative
+options.force = false;                        // honor configured threshold
+
+auto result = decomp.rebalance(particles, options, stream); // omit stream on CPU
+if (result.geometry_changed) {
+    rebuild_neighbor_list();
+}
+```
+
+`rebalance()` moves cut planes and completes particle migration before it
+returns. Every rank in the communicator must call it in the same order. The
+returned `RebalanceResult` reports whether balancing was attempted, whether the
+geometry changed, the imbalance measured before the update, and the resulting
+`MigrationResult`. A negative `local_work` selects owned-particle count.
+
+The current algorithm is separable: one shared cut array is maintained per
+axis. It balances Cartesian slabs and does not create curved boundaries,
+independent per-row cuts, change the number of ranks, or move MPI ranks between
+GPUs. Strongly localized workloads may therefore require several relaxed
+updates or an application-specific `local_work` metric.
 
 ## Performance measurement functions
 

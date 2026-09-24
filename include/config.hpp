@@ -16,12 +16,25 @@ struct AdvancedBackendConfig {
     bool allow_host_staging = true;
 };
 
+struct DynamicLoadBalanceConfig {
+    // Rebalance automatically every N migrate() calls. Zero disables the
+    // automatic path while leaving the explicit rebalance() API available.
+    std::size_t interval = 1;
+    // max(rank work) / average(rank work) required before moving boundaries.
+    double imbalance_threshold = 1.10;
+    // Fraction of the newly estimated cut position applied per rebalance.
+    double relaxation = 0.5;
+    // Smallest cell width as a fraction of a uniform cell width.
+    double minimum_cell_fraction = 0.10;
+};
+
 struct Config {
     GlobalDomain domain;
     ProcessGrid process_grid;
     HaloConfig halo;
     GridPolicy grid_policy = GridPolicy::Manual;
     TopologyInfo topology_info;
+    DynamicLoadBalanceConfig dynamic;
 #if HAS_CUDA
     ExecutionMode execution = ExecutionMode::Cuda;
 #else

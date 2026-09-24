@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added `GridPolicy::Dynamic`, nonuniform Cartesian axis cut planes, automatic
+  owned-particle load balancing during migration, and the collective
+  `Decomp::rebalance()` API for user-provided workload metrics.
+- Added matching host and CUDA owner classification for dynamic domains and
+  exposed current cut positions through `Topology::axis_cuts()`.
+
 ## 0.3.0
 
 - Added host-side application-defined scalar/vector fields that participate in

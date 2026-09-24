@@ -12,6 +12,9 @@ struct TopologyAccess {
     static Vec3i& coordinates(Topology& topology) { return topology.coordinates_; }
     static LocalDomain& local_domain(Topology& topology) { return topology.local_domain_; }
     static std::vector<Neighbor>& neighbors(Topology& topology) { return topology.neighbors_; }
+    static std::array<std::vector<double>, 3>& axis_cuts(Topology& topology) {
+        return topology.axis_cuts_;
+    }
 };
 
 } // namespace dsdecompx::detail

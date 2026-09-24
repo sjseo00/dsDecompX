@@ -45,6 +45,7 @@ std::uint64_t ExecutionState::reallocations() const noexcept {
         migration_indices.reallocations()+migration_sorted_indices.reallocations()+
         migration_flags.reallocations()+migration_offsets.reallocations()+
         migration_compacted.reallocations()+migration_temporary.reallocations()+
+        domain_cuts.reallocations()+
         host_counts.reallocations()+host_staging.reallocations();
 }
 
@@ -56,6 +57,7 @@ std::size_t ExecutionState::communication_capacity() const noexcept {
         migration_indices.capacity()+migration_sorted_indices.capacity()+
         migration_flags.capacity()+migration_offsets.capacity()+
         migration_compacted.capacity()+migration_temporary.capacity()+
+        domain_cuts.capacity()+
         host_counts.capacity()+host_staging.capacity();
 }
 

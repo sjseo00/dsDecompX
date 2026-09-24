@@ -31,6 +31,20 @@ struct StorageResizeResult {
     bool reallocated = false;
 };
 
+struct RebalanceOptions {
+    // Negative means use the current owned-particle count as the work metric.
+    double local_work = -1.0;
+    // Ignore the configured imbalance threshold.
+    bool force = false;
+};
+
+struct RebalanceResult {
+    bool attempted = false;
+    bool geometry_changed = false;
+    double imbalance_before = 1.0;
+    MigrationResult migration;
+};
+
 // Particle storage used by every Decomp operation. Constructing with a count
 // creates host arrays. Constructing with a view/provider uses existing arrays.
 class ParticleInfo {
@@ -160,6 +174,12 @@ public:
                              HaloExchangeOptions options = {});
     MigrationResult migrate(ParticleInfo& particles,
                             ExecutionStream stream = nullptr);
+    // Collective operation. Moves nonuniform Cartesian cut planes using the
+    // supplied per-rank work metric, then migrates particles to their new
+    // owners. All ranks must call it with the same options.
+    RebalanceResult rebalance(ParticleInfo& particles,
+                              RebalanceOptions options = {},
+                              ExecutionStream stream = nullptr);
     void reverse_halo(ParticleInfo& particles,
                       ExecutionStream stream = nullptr);
     void reverse_exchange(

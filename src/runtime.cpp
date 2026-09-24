@@ -10,6 +10,8 @@
 #endif
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
@@ -203,6 +205,9 @@ struct Decomp::Impl {
     MPI_Comm collective_comm = MPI_COMM_NULL;
     std::unique_ptr<Decomposition> decomposition;
     double halo_width = 0.0;
+    DynamicLoadBalanceConfig dynamic;
+    std::size_t migration_calls = 0;
+    bool rebalance_in_progress = false;
 
     ~Impl() {
         decomposition.reset();
@@ -213,6 +218,125 @@ struct Decomp::Impl {
         }
     }
 };
+
+namespace {
+
+struct RankWorkSample {
+    double work = 0.0;
+    int coordinates[3]{0, 0, 0};
+};
+
+struct GeometryBalanceResult {
+    bool attempted = false;
+    bool changed = false;
+    double imbalance = 1.0;
+};
+
+template<class ImplType>
+GeometryBalanceResult rebalance_geometry(ImplType& impl,
+                                         double local_work,
+                                         bool force) {
+    if (!std::isfinite(local_work) || local_work < 0.0) {
+        throw std::invalid_argument(
+            "dsDecompX: rebalance local_work must be finite and non-negative");
+    }
+
+    const Topology& topology = impl.decomposition->topology();
+    const int rank_count = topology.size();
+    RankWorkSample local;
+    local.work = local_work;
+    for (int axis = 0; axis < 3; ++axis) {
+        local.coordinates[axis] = topology.coordinates()[axis];
+    }
+    std::vector<RankWorkSample> samples(static_cast<std::size_t>(rank_count));
+    MPI_Allgather(&local, static_cast<int>(sizeof(local)), MPI_BYTE,
+                  samples.data(), static_cast<int>(sizeof(local)), MPI_BYTE,
+                  impl.collective_comm);
+
+    double total_work = 0.0;
+    double maximum_work = 0.0;
+    for (const auto& sample : samples) {
+        total_work += sample.work;
+        maximum_work = std::max(maximum_work, sample.work);
+    }
+    GeometryBalanceResult result;
+    result.attempted = true;
+    if (total_work <= 0.0 || rank_count <= 1) return result;
+    result.imbalance = maximum_work /
+        (total_work / static_cast<double>(rank_count));
+    if (!force && result.imbalance < impl.dynamic.imbalance_threshold) {
+        return result;
+    }
+
+    auto cuts = topology.axis_cuts();
+    const Vec3i& dimensions = topology.dimensions();
+    const GlobalDomain& domain = impl.decomposition->global_domain();
+    for (int axis = 0; axis < 3; ++axis) {
+        const int slab_count = dimensions[axis];
+        if (slab_count <= 1) continue;
+        std::vector<double> slab_work(static_cast<std::size_t>(slab_count), 0.0);
+        for (const auto& sample : samples) {
+            slab_work[static_cast<std::size_t>(sample.coordinates[axis])] +=
+                sample.work;
+        }
+
+        const std::vector<double> old_cuts = cuts[axis];
+        const double target = total_work / static_cast<double>(slab_count);
+        const double extent = domain.upper[axis] - domain.lower[axis];
+        const double uniform_width = extent / static_cast<double>(slab_count);
+        // A 26-neighbor exchange reaches only the immediately adjacent cell.
+        // Do not let dynamic balancing make a cell narrower than the halo.
+        const double minimum_width = std::min(
+            uniform_width,
+            std::max(uniform_width * impl.dynamic.minimum_cell_fraction,
+                     impl.halo_width));
+        cuts[axis].front() = domain.lower[axis];
+        cuts[axis].back() = domain.upper[axis];
+        for (int boundary = 1; boundary < slab_count; ++boundary) {
+            const double desired = target * static_cast<double>(boundary);
+            double cumulative = 0.0;
+            int slab = 0;
+            while (slab < slab_count - 1 &&
+                   cumulative + slab_work[static_cast<std::size_t>(slab)] < desired) {
+                cumulative += slab_work[static_cast<std::size_t>(slab++)];
+            }
+            const double weight = slab_work[static_cast<std::size_t>(slab)];
+            const double fraction = weight > 0.0
+                ? std::clamp((desired - cumulative) / weight, 0.0, 1.0)
+                : 0.5;
+            const double proposed = old_cuts[static_cast<std::size_t>(slab)] +
+                fraction * (old_cuts[static_cast<std::size_t>(slab + 1)] -
+                            old_cuts[static_cast<std::size_t>(slab)]);
+            const double old = old_cuts[static_cast<std::size_t>(boundary)];
+            cuts[axis][static_cast<std::size_t>(boundary)] = old +
+                impl.dynamic.relaxation * (proposed - old);
+        }
+        for (int i = 1; i < slab_count; ++i) {
+            cuts[axis][static_cast<std::size_t>(i)] = std::max(
+                cuts[axis][static_cast<std::size_t>(i)],
+                cuts[axis][static_cast<std::size_t>(i - 1)] + minimum_width);
+        }
+        for (int i = slab_count - 1; i > 0; --i) {
+            cuts[axis][static_cast<std::size_t>(i)] = std::min(
+                cuts[axis][static_cast<std::size_t>(i)],
+                cuts[axis][static_cast<std::size_t>(i + 1)] - minimum_width);
+        }
+    }
+
+    const auto& old_cuts = topology.axis_cuts();
+    for (int axis = 0; axis < 3; ++axis) {
+        for (std::size_t i = 0; i < cuts[axis].size(); ++i) {
+            if (std::abs(cuts[axis][i] - old_cuts[axis][i]) > 1.0e-12) {
+                result.changed = true;
+                break;
+            }
+        }
+    }
+    if (result.changed) impl.decomposition->set_axis_cuts(cuts);
+    return result;
+}
+
+} // namespace
 
 ParticleInfo::~ParticleInfo() { release_device_memory(); }
 
@@ -539,8 +663,15 @@ Decomp::Decomp(MPI_Comm communicator, Config config)
         config.topology_info.intra_node_weight=intra_weight;
         config.topology_info.inter_node_weight=inter_weight;
     }
+    if (!(config.dynamic.imbalance_threshold >= 1.0) ||
+        !(config.dynamic.relaxation > 0.0 && config.dynamic.relaxation <= 1.0) ||
+        !(config.dynamic.minimum_cell_fraction > 0.0 &&
+          config.dynamic.minimum_cell_fraction <= 1.0)) {
+        throw std::invalid_argument("dsDecompX: invalid dynamic load-balance configuration");
+    }
     MPI_Comm_dup(communicator, &impl_->collective_comm);
     impl_->halo_width = config.halo.width;
+    impl_->dynamic = config.dynamic;
     Backend backend = create_selected_backend(communicator, config);
     impl_->decomposition = std::make_unique<Decomposition>(
         std::move(config), std::move(backend));
@@ -658,6 +789,14 @@ HaloResult Decomp::exchange_halo(ParticleInfo& particles,
 
 MigrationResult Decomp::migrate(ParticleInfo& particles,
                                 ExecutionStream stream) {
+    ++impl_->migration_calls;
+    if (!impl_->rebalance_in_progress &&
+        impl_->decomposition->grid_policy() == GridPolicy::Dynamic &&
+        impl_->dynamic.interval != 0 &&
+        impl_->migration_calls % impl_->dynamic.interval == 0) {
+        rebalance_geometry(*impl_, static_cast<double>(particles.owned_count()),
+                           false);
+    }
     const std::size_t owned = particles.owned_count();
     ConstParticleView input = particles.read_view(owned);
     input.count = owned;
@@ -682,6 +821,28 @@ MigrationResult Decomp::migrate(ParticleInfo& particles,
                                                                 stream);
     }
     particles.commit_counts(result.new_owned_count, 0);
+    return result;
+}
+
+RebalanceResult Decomp::rebalance(ParticleInfo& particles,
+                                  RebalanceOptions options,
+                                  ExecutionStream stream) {
+    const double work = options.local_work >= 0.0
+        ? options.local_work
+        : static_cast<double>(particles.owned_count());
+    const GeometryBalanceResult geometry =
+        rebalance_geometry(*impl_, work, options.force);
+    RebalanceResult result;
+    result.attempted = geometry.attempted;
+    result.geometry_changed = geometry.changed;
+    result.imbalance_before = geometry.imbalance;
+
+    struct Guard {
+        bool& flag;
+        explicit Guard(bool& value) : flag(value) { flag = true; }
+        ~Guard() { flag = false; }
+    } guard(impl_->rebalance_in_progress);
+    result.migration = migrate(particles, stream);
     return result;
 }
 

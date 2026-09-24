@@ -2,6 +2,7 @@
 
 #include "internal/backend.hpp"
 #include "internal/decomp_impl.hpp"
+#include "internal/topology_access.hpp"
 
 #include <stdexcept>
 #include <algorithm>
@@ -105,9 +106,42 @@ void Decomposition::update_domain(const GlobalDomain& domain) {
         throw std::invalid_argument(
             "dsDecompX: changing periodicity after topology creation requires reconstructing Decomp");
     }
+    auto& cuts = detail::TopologyAccess::axis_cuts(impl_->topology);
+    const GlobalDomain previous = impl_->config.domain;
+    for (int axis = 0; axis < 3; ++axis) {
+        const double old_extent = previous.upper[axis] - previous.lower[axis];
+        const double new_extent = domain.upper[axis] - domain.lower[axis];
+        for (double& cut : cuts[axis]) {
+            const double fraction = (cut - previous.lower[axis]) / old_extent;
+            cut = domain.lower[axis] + fraction * new_extent;
+        }
+    }
     impl_->config.domain = domain;
     impl_->refresh_domain_geometry();
     invalidate_halo_plan();
+}
+
+void Decomposition::set_axis_cuts(
+    const std::array<std::vector<double>, 3>& cuts) {
+    const Vec3i& dimensions = impl_->topology.dimensions();
+    for (int axis = 0; axis < 3; ++axis) {
+        if (cuts[axis].size() != static_cast<std::size_t>(dimensions[axis] + 1)) {
+            throw std::invalid_argument("dsDecompX: dynamic cut count does not match process grid");
+        }
+        if (cuts[axis].front() != impl_->config.domain.lower[axis] ||
+            cuts[axis].back() != impl_->config.domain.upper[axis] ||
+            !std::is_sorted(cuts[axis].begin(), cuts[axis].end()) ||
+            std::adjacent_find(cuts[axis].begin(), cuts[axis].end()) != cuts[axis].end()) {
+            throw std::invalid_argument("dsDecompX: dynamic cuts must be strictly increasing and span the domain");
+        }
+    }
+    detail::TopologyAccess::axis_cuts(impl_->topology) = cuts;
+    impl_->refresh_domain_geometry();
+    invalidate_halo_plan();
+}
+
+GridPolicy Decomposition::grid_policy() const noexcept {
+    return impl_->config.grid_policy;
 }
 
 void Decomposition::set_halo_width(double width) {

@@ -39,6 +39,7 @@ public:
     DeviceBuffer migration_offsets;
     DeviceBuffer migration_compacted;
     DeviceBuffer migration_temporary;
+    DeviceBuffer domain_cuts;
     PinnedBuffer host_counts;
     PinnedBuffer host_staging;
 

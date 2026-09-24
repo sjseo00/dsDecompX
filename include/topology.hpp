@@ -2,6 +2,7 @@
 
 #include "domain.hpp"
 
+#include <array>
 #include <vector>
 
 namespace dsdecompx {
@@ -26,6 +27,9 @@ public:
     const Vec3i& coordinates() const noexcept { return coordinates_; }
     const LocalDomain& local_domain() const noexcept { return local_domain_; }
     const std::vector<Neighbor>& neighbors() const noexcept { return neighbors_; }
+    const std::array<std::vector<double>, 3>& axis_cuts() const noexcept {
+        return axis_cuts_;
+    }
 
 private:
     friend struct detail::TopologyAccess;
@@ -36,6 +40,7 @@ private:
     Vec3i coordinates_{0, 0, 0};
     LocalDomain local_domain_{};
     std::vector<Neighbor> neighbors_;
+    std::array<std::vector<double>, 3> axis_cuts_;
 };
 
 } // namespace dsdecompx

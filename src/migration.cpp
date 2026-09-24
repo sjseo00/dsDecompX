@@ -82,10 +82,11 @@ int Decomposition::owner_rank(const Vec3d& input_position) const {
             position += lower;
         }
 
-        const double scaled = (position - lower) / extent;
-        int coordinate = static_cast<int>(scaled * impl_->topology.dimensions()[axis]);
-        coordinate = std::max(0, std::min(coordinate,
-            impl_->topology.dimensions()[axis] - 1));
+        const auto& cuts = impl_->topology.axis_cuts()[axis];
+        int coordinate = static_cast<int>(
+            std::upper_bound(cuts.begin(), cuts.end(), position) - cuts.begin()) - 1;
+        coordinate = std::max(0, std::min(
+            coordinate, impl_->topology.dimensions()[axis] - 1));
         coordinates[axis] = coordinate;
     }
 
@@ -192,8 +193,23 @@ MigrationResult Decomposition::migrate_particles(
         state.host_counts.resize(rank_count*sizeof(unsigned int));
         state.scan_temporary.resize(temporary_bytes);
 
+        const auto& axis_cuts = impl_->topology.axis_cuts();
+        Vec3i cut_offsets{0, 0, 0};
+        std::vector<double> packed_cuts;
+        for (int axis = 0; axis < 3; ++axis) {
+            cut_offsets[axis] = static_cast<int>(packed_cuts.size());
+            packed_cuts.insert(packed_cuts.end(), axis_cuts[axis].begin(),
+                               axis_cuts[axis].end());
+        }
+        state.domain_cuts.resize(packed_cuts.size()*sizeof(double));
+        cuda::detail::check(cudaMemcpyAsync(
+            state.domain_cuts.data(), packed_cuts.data(),
+            packed_cuts.size()*sizeof(double), cudaMemcpyHostToDevice,
+            cuda_stream), "copy dynamic domain cuts");
+
         cuda::launch_classify_destinations(
             owned_particles,impl_->config.domain,impl_->topology.dimensions(),
+            static_cast<const double*>(state.domain_cuts.data()),cut_offsets,
             static_cast<int*>(state.migration_destinations.data()),cuda_stream);
         cuda::launch_build_migration_layout(
             owned_particles,impl_->config.domain,

@@ -496,11 +496,11 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
             "dsDecompX: CUDA particle view requires ENABLE_CUDA");
 #endif
     }
-    if (impl_->halo_plan_valid) {
-        refresh_halo_buffers(owned_particles);
-    } else {
-        rebuild_halo_plan(owned_particles);
-    }
+    // Correctness over cache reuse: host halo membership can change every
+    // integration step as atoms cross the halo-width slab boundaries. Reusing
+    // a cached source-index set risks stale/missing ghosts, so rebuild the
+    // host halo plan every exchange.
+    rebuild_halo_plan(owned_particles);
 
     pack_halo_fields(*impl_,owned_particles);
 

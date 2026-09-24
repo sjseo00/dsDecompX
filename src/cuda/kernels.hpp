@@ -63,6 +63,8 @@ void launch_accumulate_reverse_records(const ParticleRecord* records,
 void launch_classify_destinations(const ConstParticleView& particles,
                                   GlobalDomain domain,
                                   Vec3i process_grid,
+                                  const double* axis_cuts,
+                                  Vec3i cut_offsets,
                                   int* destinations,
                                   cudaStream_t stream);
 

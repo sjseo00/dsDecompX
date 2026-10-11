@@ -288,7 +288,8 @@ void Decomposition::exchange_halo(const ConstParticleView& owned_particles) {
 }
 
 HaloExchangeHandle Decomposition::begin_halo_exchange(
-    const ConstParticleView& owned_particles, ExecutionStream stream) {
+    const ConstParticleView& owned_particles, ExecutionStream stream,
+    bool positions_only) {
     (void)stream;
     if (impl_->operation_active) {
         throw std::logic_error("dsDecompX: an operation is already in flight");
@@ -303,6 +304,7 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
         impl_->device_halo_plan_valid = false;
     }
     impl_->device_halo_plan_reused = false;
+    impl_->device_halo_positions_only = false;
 #endif
     const std::uint64_t generation = ++impl_->operation_generation;
     const bool timed = impl_->timing_enabled || impl_->perf_enabled;
@@ -399,7 +401,18 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
             impl_->device_halo_plan_reused = reuse_plan;
             impl_->device_halo_plan_valid = false;  // set again once a plan is built
 
-            const std::size_t record_bytes = impl_->device_halo_layout.stride;
+            // Positions-only refresh: a reused plan already fixed every ghost's
+            // velocity, mass, charge, type and id, so only x, y, z (3 doubles)
+            // travel. Every input here is identical on all ranks, so they agree
+            // on the record size. NVSHMEM keeps full records (its symmetric
+            // receive slots are sized by the record).
+            const bool compact = positions_only && reuse_plan &&
+                                 impl_->device_halo_layout.fields.empty() &&
+                                 impl_->backend->kind() != BackendKind::Nvshmem;
+            impl_->device_halo_positions_only = compact;
+            const std::size_t record_bytes =
+                compact ? 3 * sizeof(double) : impl_->device_halo_layout.stride;
+            impl_->device_halo_record_bytes = record_bytes;
             const cuda::WireFields wire =
                 detail::bind_source_fields(impl_->device_halo_layout, owned_particles);
             bool reuse_synced = false;
@@ -494,10 +507,17 @@ HaloExchangeHandle Decomposition::begin_halo_exchange(
             state.halo_source_indices.resize(source_bytes);
             auto* send_records = static_cast<unsigned char*>(state.device_send.data());
             if (reuse_plan) {
-                cuda::launch_halo_gather(
-                    owned_particles, spec, impl_->device_halo_send_counts.data(),
-                    static_cast<const unsigned int*>(state.halo_source_indices.data()),
-                    send_records, wire, cuda_stream);
+                if (compact) {
+                    cuda::launch_halo_gather_positions(
+                        owned_particles, spec, impl_->device_halo_send_counts.data(),
+                        static_cast<const unsigned int*>(state.halo_source_indices.data()),
+                        send_records, cuda_stream);
+                } else {
+                    cuda::launch_halo_gather(
+                        owned_particles, spec, impl_->device_halo_send_counts.data(),
+                        static_cast<const unsigned int*>(state.halo_source_indices.data()),
+                        send_records, wire, cuda_stream);
+                }
             } else {
                 cuda::launch_halo_scatter(
                     owned_particles, spec, masks, block_offsets, send_records,
@@ -784,10 +804,10 @@ void Decomposition::end_halo_exchange(HaloExchangeHandle& handle,
             for (std::size_t n=0; n<impl_->device_halo_results.size(); ++n) {
                 const std::uint64_t send_bytes =
                     static_cast<std::uint64_t>(impl_->device_halo_send_counts[n]) *
-                    impl_->device_halo_layout.stride;
+                    impl_->device_halo_record_bytes;
                 const std::uint64_t receive_bytes =
                     static_cast<std::uint64_t>(impl_->device_halo_receive_counts[n]) *
-                    impl_->device_halo_layout.stride;
+                    impl_->device_halo_record_bytes;
                 sent += send_bytes;
                 received += receive_bytes;
                 if (impl_->neighbor_detail_enabled) {
@@ -889,15 +909,26 @@ void Decomposition::unpack_device_halos(ParticleView destination,
         throw std::invalid_argument("dsDecompX: device halo output capacity is too small");
     }
     const cudaStream_t cuda_stream=static_cast<cudaStream_t>(stream);
-    // Custom fields are matched by name against the destination view.
-    const cuda::WireFields wire=detail::bind_destination_fields(
-        impl_->device_halo_layout,destination,destination_offset+total);
-    std::size_t offset=destination_offset;
-    for (const DeviceHaloBuffer& buffer : impl_->device_halo_results) {
-        cuda::launch_unpack_records(
-            reinterpret_cast<const unsigned char*>(buffer.data),buffer.count,
-            destination,offset,wire,cuda_stream);
-        offset+=buffer.count;
+    if (impl_->device_halo_positions_only) {
+        // The buffers hold position triples (see HaloExchangeOptions).
+        std::size_t offset=destination_offset;
+        for (const DeviceHaloBuffer& buffer : impl_->device_halo_results) {
+            cuda::launch_unpack_positions(
+                reinterpret_cast<const double*>(buffer.data),buffer.count,
+                destination,offset,cuda_stream);
+            offset+=buffer.count;
+        }
+    } else {
+        // Custom fields are matched by name against the destination view.
+        const cuda::WireFields wire=detail::bind_destination_fields(
+            impl_->device_halo_layout,destination,destination_offset+total);
+        std::size_t offset=destination_offset;
+        for (const DeviceHaloBuffer& buffer : impl_->device_halo_results) {
+            cuda::launch_unpack_records(
+                reinterpret_cast<const unsigned char*>(buffer.data),buffer.count,
+                destination,offset,wire,cuda_stream);
+            offset+=buffer.count;
+        }
     }
     impl_->cuda_execution->unpack_ready.record(cuda_stream);
     impl_->cuda_execution->reuse_event_recorded = true;

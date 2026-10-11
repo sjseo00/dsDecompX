@@ -200,6 +200,22 @@ __global__ void halo_gather_kernel(ConstParticleView p, DeviceGatherSpec spec,
                       output + slot * fields.stride);
 }
 
+// Same slot walk as halo_gather_kernel, but only the position triple is written.
+__global__ void halo_gather_positions_kernel(ConstParticleView p, DeviceGatherSpec spec,
+                                             std::size_t total,
+                                             const unsigned int* source_indices,
+                                             double* output) {
+    const std::size_t slot = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (slot >= total) return;
+    int n = 0;
+    while (n + 1 < spec.count && slot >= spec.end[n]) ++n;
+    const std::size_t i = source_indices[slot];
+    double* record = output + slot * 3;
+    record[0] = p.x[i] + spec.shift[n][0];
+    record[1] = p.y[i] + spec.shift[n][1];
+    record[2] = p.z[i] + spec.shift[n][2];
+}
+
 __global__ void pack_reverse_kernel(ParticleView p, std::size_t source_offset,
                                     std::size_t count, ParticleRecord* output) {
     const std::size_t k=blockIdx.x*blockDim.x+threadIdx.x;
@@ -268,6 +284,27 @@ void launch_halo_gather(const ConstParticleView& particles,
                          kThreads, 0, stream>>>(
         particles, device, total, source_indices, output, to_device_fields(fields));
     detail::check(cudaGetLastError(), "launch halo gather kernel");
+}
+
+void launch_halo_gather_positions(const ConstParticleView& particles,
+                                  const HaloPackSpec& spec, const unsigned int* counts,
+                                  const unsigned int* source_indices,
+                                  unsigned char* output, cudaStream_t stream) {
+    if (!spec.neighbor_count) return;
+    DeviceGatherSpec device{};
+    device.count = static_cast<int>(spec.neighbor_count);
+    std::size_t total = 0;
+    for (int n = 0; n < device.count; ++n) {
+        for (int axis = 0; axis < 3; ++axis)
+            device.shift[n][axis] = spec.periodic_shift[n][axis];
+        total = spec.offset[n] + counts[n];
+        device.end[n] = total;
+    }
+    if (!total) return;
+    halo_gather_positions_kernel<<<static_cast<unsigned>((total + kThreads - 1) / kThreads),
+                                   kThreads, 0, stream>>>(
+        particles, device, total, source_indices, reinterpret_cast<double*>(output));
+    detail::check(cudaGetLastError(), "launch halo position gather kernel");
 }
 
 void launch_pack_reverse_records(const ParticleView& particles,

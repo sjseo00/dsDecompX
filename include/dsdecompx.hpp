@@ -27,7 +27,20 @@ struct HaloResult {
 struct HaloExchangeOptions {
     bool rebuild = false;
     ExecutionStream stream = nullptr;
+    // CUDA views only. When the exchange refreshes an existing halo plan in
+    // place (rebuild == false and the plan is reusable), send just the ghost
+    // positions (3 doubles per ghost) instead of the whole particle record
+    // (about 96 bytes). The ghosts then keep the velocity, mass, charge, type
+    // and id of the last full exchange and get zero forces; positions are
+    // exactly what a full exchange would deliver. Ignored for a rebuilt plan,
+    // with custom wire fields and with the NVSHMEM backend. The same value must
+    // be passed on every rank.
+    bool positions_only = false;
 };
+// Defined when HaloExchangeOptions has positions_only (lets a client build against older releases).
+#define DSDECOMPX_HALO_POSITIONS_ONLY 1
+// Where the translation unit that includes this header found it (to diagnose mixed installs).
+inline const char* header_path() noexcept { return __FILE__; }
 
 struct StorageResizeResult {
     ParticleView view;

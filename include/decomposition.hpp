@@ -106,6 +106,9 @@ public:
     // place, i.e. ghost membership and slot order are unchanged. Always false
     // for host particle memory (the host path reports changes via global IDs).
     bool halo_plan_reused() const noexcept;
+    // True when the last CUDA halo exchange moved positions only (see
+    // HaloExchangeOptions::positions_only).
+    bool halo_positions_only() const noexcept;
     // True when a non-rebuild device exchange of this view would refresh the
     // existing plan in place (same ghost list, no count exchange). Identical on
     // every rank as long as the ranks make the same collective calls.
@@ -116,9 +119,13 @@ public:
     // One Decomposition supports one in-flight operation. The handle must be
     // completed explicitly; destroying an active handle never synchronizes and
     // terminates the process to prevent use-after-free of MPI/CUDA resources.
+    // positions_only: see HaloExchangeOptions::positions_only. With it, the
+    // received device halo buffers (received_device_halos) hold 3 doubles per
+    // ghost, not ParticleRecords; use unpack_device_halos() to consume them.
     HaloExchangeHandle begin_halo_exchange(
         const ConstParticleView& owned_particles,
-        ExecutionStream stream = nullptr);
+        ExecutionStream stream = nullptr,
+        bool positions_only = false);
     void end_halo_exchange(HaloExchangeHandle& handle,
                            ExecutionStream stream = nullptr);
     void exchange_halo(const ConstParticleView& owned_particles);

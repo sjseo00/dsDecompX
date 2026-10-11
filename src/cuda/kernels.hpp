@@ -100,6 +100,25 @@ void launch_halo_gather(const ConstParticleView& particles,
                         const WireFields& fields,
                         cudaStream_t stream);
 
+// Reused-plan refresh that sends only the positions: slot k gets the three
+// doubles x, y, z (plus the periodic shift) of owned particle source_indices[k],
+// 3 * sizeof(double) bytes apart. No custom fields.
+void launch_halo_gather_positions(const ConstParticleView& particles,
+                                  const HaloPackSpec& spec,
+                                  const unsigned int* counts,
+                                  const unsigned int* source_indices,
+                                  unsigned char* output,
+                                  cudaStream_t stream);
+
+// Writes `count` position triples (x, y, z doubles) into the ghost slots
+// starting at destination_offset and zeroes their forces. Everything else of
+// the ghosts is left as the last full exchange set it.
+void launch_unpack_positions(const double* positions,
+                             std::size_t count,
+                             ParticleView particles,
+                             std::size_t destination_offset,
+                             cudaStream_t stream);
+
 // Unpacks `count` wire records (fields.stride bytes apart) into particles
 // starting at destination_offset, including any custom fields.
 void launch_unpack_records(const unsigned char* records,

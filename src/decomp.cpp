@@ -177,6 +177,14 @@ bool Decomposition::halo_plan_reused() const noexcept {
 #endif
 }
 
+bool Decomposition::halo_positions_only() const noexcept {
+#if HAS_CUDA
+    return impl_->device_halo_positions_only;
+#else
+    return false;
+#endif
+}
+
 std::size_t Decomposition::total_received_halo_particles() const noexcept {
     std::size_t total = 0;
 #if HAS_CUDA

@@ -66,6 +66,11 @@ struct Decomposition::Impl {
     bool device_halo_plan_valid = false;
     // Whether the most recent device halo exchange reused the plan.
     bool device_halo_plan_reused = false;
+    // Whether the most recent device halo exchange moved positions only (3
+    // doubles per ghost, see HaloExchangeOptions::positions_only), and the
+    // bytes per ghost it put on the wire.
+    bool device_halo_positions_only = false;
+    std::size_t device_halo_record_bytes = 0;
     // Owned count at the last device halo pack (validates reverse halo).
     std::size_t device_halo_owned_count = 0;
     // Wire layout (record stride + custom fields) of the last device halo /

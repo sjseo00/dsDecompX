@@ -792,6 +792,11 @@ Decomp::Decomp(MPI_Comm communicator, Config config)
         std::move(config), std::move(backend));
 }
 
+// HaloExchangeOptions is passed by value, so its layout is part of the ABI. A client compares this
+// with its own sizeof to catch headers and library from different builds (see MDSystem).
+std::size_t halo_exchange_options_size() noexcept;
+std::size_t halo_exchange_options_size() noexcept { return sizeof(HaloExchangeOptions); }
+
 Decomp::~Decomp() = default;
 Decomp::Decomp(Decomp&&) noexcept = default;
 Decomp& Decomp::operator=(Decomp&&) noexcept = default;
@@ -892,8 +897,8 @@ void Decomp::begin_halo_exchange(ParticleInfo& particles,
     }
 
     auto& pending = impl_->pending_halo;
-    pending.handle = impl_->decomposition->begin_halo_exchange(input,
-                                                                options.stream);
+    pending.handle = impl_->decomposition->begin_halo_exchange(
+        input, options.stream, options.positions_only);
     pending.options = options;
     pending.owned = owned;
     pending.memory_space = input.memory_space;
@@ -921,6 +926,13 @@ HaloResult Decomp::end_halo_exchange(ParticleInfo& particles) {
     const std::size_t required = owned + ghosts;
     StorageResizeResult output = particles.resize_storage(required, owned);
     require_output_capacity(output.view, required);
+    if (output.reallocated && impl_->decomposition->halo_positions_only()) {
+        // Only the owned particles survive a reallocation, and a positions-only refresh sends nothing
+        // but x, y, z: the ghosts would lose their velocity, mass, charge, type and id.
+        throw std::logic_error(
+            "dsDecompX: a positions-only halo refresh needed a larger particle storage; "
+            "the ghosts' other fields are gone (use a full exchange)");
+    }
 
     if (input_space == MemorySpace::Host) {
         if (output.view.memory_space != MemorySpace::Host) {

@@ -1,7 +1,6 @@
 #include "kernels.hpp"
 #include "cuda_error.hpp"
-
-#include <cmath>
+#include "wrap.cuh"
 
 namespace dsdecompx::cuda {
 namespace {
@@ -21,14 +20,9 @@ __global__ void classify_kernel(ConstParticleView p, DeviceDomain domain,
     const double position[3] = {p.x[i], p.y[i], p.z[i]};
     int coordinate[3];
     for (int axis = 0; axis < 3; ++axis) {
-        const double lower = domain.lower[axis];
-        const double extent = domain.upper[axis] - lower;
-        double value = position[axis];
-        if (domain.periodic[axis]) {
-            value -= lower;
-            value -= floor(value / extent) * extent;
-            value += lower;
-        }
+        const double value = wrap_periodic(position[axis], domain.lower[axis],
+                                           domain.upper[axis],
+                                           domain.periodic[axis]);
         const double* cuts = axis_cuts + cut_offsets.value[axis];
         int lo = 0;
         int hi = grid.value[axis];

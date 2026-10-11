@@ -12,10 +12,35 @@ option(BUILD_BENCHMARKS "Build the dsDecompX benchmark" OFF)
 option(RUN_GPU_TESTS "Register GPU/MPI tests with CTest" OFF)
 option(ENABLE_PERF_COUNTERS "Compile performance counters" ON)
 option(ENABLE_CUDA "Build the CUDA execution layer" OFF)
-option(ENABLE_NCCL "Build the NCCL data-plane backend" OFF)
-option(ENABLE_NVSHMEM "Build the NVSHMEM data-plane backend" OFF)
+# NCCL / NVSHMEM are tri-state: ON (required, configure fails if missing), OFF
+# (never built, even when installed) or AUTO (default: built when ENABLE_CUDA=ON,
+# AUTO_DETECT_GPU_BACKENDS=ON and the library is found).
+set(ENABLE_NCCL "AUTO" CACHE STRING
+    "NCCL data-plane backend: ON, OFF or AUTO (use it if found in a CUDA build)")
+set(ENABLE_NVSHMEM "AUTO" CACHE STRING
+    "NVSHMEM data-plane backend: ON, OFF or AUTO (use it if found in a CUDA build)")
+set_property(CACHE ENABLE_NCCL PROPERTY STRINGS AUTO ON OFF)
+set_property(CACHE ENABLE_NVSHMEM PROPERTY STRINGS AUTO ON OFF)
 option(AUTO_DETECT_GPU_BACKENDS
-    "Automatically include installed NCCL/NVSHMEM backends in CUDA builds" ON)
+    "Let ENABLE_NCCL/ENABLE_NVSHMEM=AUTO pick up installed backends in CUDA builds" ON)
+
+foreach(_backend NCCL NVSHMEM)
+    string(TOUPPER "${ENABLE_${_backend}}" _mode)
+    if(_mode STREQUAL "AUTO")
+        set(DSDX_${_backend}_AUTO ${AUTO_DETECT_GPU_BACKENDS})
+        set(ENABLE_${_backend} OFF)
+    else()
+        set(DSDX_${_backend}_AUTO OFF)
+        if(_mode STREQUAL "ON" OR _mode STREQUAL "TRUE" OR _mode STREQUAL "1" OR _mode STREQUAL "YES")
+            set(ENABLE_${_backend} ON)
+        elseif(_mode STREQUAL "OFF" OR _mode STREQUAL "FALSE" OR _mode STREQUAL "0" OR _mode STREQUAL "NO")
+            set(ENABLE_${_backend} OFF)
+        else()
+            message(FATAL_ERROR
+                "ENABLE_${_backend}='${ENABLE_${_backend}}' is invalid; use AUTO, ON or OFF")
+        endif()
+    endif()
+endforeach()
 
 if(ENABLE_NCCL OR ENABLE_NVSHMEM)
     set(ENABLE_CUDA ON CACHE BOOL
@@ -28,29 +53,39 @@ if(ENABLE_CUDA AND DEFINED CMAKE_CUDA_HOST_COMPILER)
     message(STATUS "dsDecompX: CUDA host compiler ${CMAKE_CUDA_HOST_COMPILER}")
 endif()
 
+# GPU architectures compiled when the user has not chosen any. sm_60 is the
+# floor (native double-precision atomicAdd); cubins are compatible within a
+# major version, so 70/80/90 also run on Turing, Ampere GA10x and Ada. Override
+# with -DCMAKE_CUDA_ARCHITECTURES=... (or =native on a machine with the GPU).
+set(DSDECOMPX_CUDA_ARCHITECTURES "70;80;90" CACHE STRING
+    "CUDA architectures used when CMAKE_CUDA_ARCHITECTURES is not set")
+
 # Enable CUDA before creating the target so CMake initializes the target's
 # CUDA_ARCHITECTURES property. Enabling it only after add_library() leaves the
 # property empty with CMake 3.18-3.22 and causes generation to fail.
 if(ENABLE_CUDA)
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES AND NOT DEFINED ENV{CUDAARCHS})
+        set(CMAKE_CUDA_ARCHITECTURES "${DSDECOMPX_CUDA_ARCHITECTURES}")
+    endif()
     enable_language(CUDA)
+    message(STATUS "dsDecompX: CUDA architectures ${CMAKE_CUDA_ARCHITECTURES}")
     find_package(CUDAToolkit REQUIRED)
-    if(AUTO_DETECT_GPU_BACKENDS)
-        if(NOT ENABLE_NVSHMEM)
-            find_package(NVSHMEM QUIET)
-            if(NVSHMEM_FOUND)
-                set(ENABLE_NVSHMEM ON)
-                message(STATUS "dsDecompX: automatically enabled NVSHMEM backend")
-            endif()
+    if(DSDX_NVSHMEM_AUTO AND NOT ENABLE_NVSHMEM)
+        find_package(NVSHMEM QUIET)
+        if(NVSHMEM_FOUND)
+            set(ENABLE_NVSHMEM ON)
+            message(STATUS "dsDecompX: automatically enabled NVSHMEM backend")
         endif()
-        if(NOT ENABLE_NCCL)
-            find_package(NCCL QUIET)
-            if(NCCL_FOUND)
-                set(ENABLE_NCCL ON)
-                message(STATUS "dsDecompX: automatically enabled NCCL backend")
-            endif()
+    endif()
+    if(DSDX_NCCL_AUTO AND NOT ENABLE_NCCL)
+        find_package(NCCL QUIET)
+        if(NCCL_FOUND)
+            set(ENABLE_NCCL ON)
+            message(STATUS "dsDecompX: automatically enabled NCCL backend")
         endif()
     endif()
 endif()
+message(STATUS "dsDecompX: CUDA=${ENABLE_CUDA} NCCL=${ENABLE_NCCL} NVSHMEM=${ENABLE_NVSHMEM}")
 
 add_library(dsdecompx
     src/backend_selection.cpp
@@ -86,12 +121,12 @@ if(ENABLE_CUDA)
         src/cuda/cuda_buffer.cpp
         src/cuda/cuda_event.cpp
         src/cuda/execution.cpp
+        src/device_fields.cpp
         src/cuda/pack.cu
         src/cuda/unpack.cu
         src/cuda/classify.cu
         src/cuda/migration_layout.cu
-        src/cuda/compact.cu
-        src/cuda/prefix_scan.cu)
+        src/cuda/reverse_fields.cu)
     target_link_libraries(dsdecompx PUBLIC CUDA::cudart)
     target_compile_options(dsdecompx PRIVATE
         $<$<COMPILE_LANGUAGE:CUDA>:--expt-extended-lambda>

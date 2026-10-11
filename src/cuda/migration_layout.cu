@@ -1,11 +1,12 @@
 #include "kernels.hpp"
 #include "cuda_error.hpp"
+#include "wire.cuh"
+#include "wrap.cuh"
 
 #include <cub/device/device_radix_sort.cuh>
 #include <cub/device/device_scan.cuh>
 
 #include <algorithm>
-#include <cmath>
 
 namespace dsdecompx::cuda {
 namespace {
@@ -22,27 +23,32 @@ __global__ void initialize_layout_kernel(const int* destinations,
     atomicAdd(rank_counts+destinations[i],1u);
 }
 
-__device__ double wrap(double value,double lower,double upper,bool periodic) {
-    if (!periodic) return value;
-    const double extent=upper-lower;
-    value-=lower; value-=floor(value/extent)*extent; return value+lower;
-}
-
 __global__ void pack_sorted_kernel(ConstParticleView p, DeviceDomain domain,
                                    const unsigned int* sorted_indices,
-                                   ParticleRecord* packed) {
+                                   unsigned char* packed,
+                                   DeviceWireFields fields) {
     const std::size_t k=blockIdx.x*blockDim.x+threadIdx.x;
     if (k>=p.count) return;
     const std::size_t i=sorted_indices[k];
     ParticleRecord r;
-    r.x=wrap(p.x[i],domain.lower[0],domain.upper[0],domain.periodic[0]);
-    r.y=wrap(p.y[i],domain.lower[1],domain.upper[1],domain.periodic[1]);
-    r.z=wrap(p.z[i],domain.lower[2],domain.upper[2],domain.periodic[2]);
+    r.x=wrap_periodic(p.x[i],domain.lower[0],domain.upper[0],domain.periodic[0]);
+    r.y=wrap_periodic(p.y[i],domain.lower[1],domain.upper[1],domain.periodic[1]);
+    r.z=wrap_periodic(p.z[i],domain.lower[2],domain.upper[2],domain.periodic[2]);
     r.vx=p.vx[i]; r.vy=p.vy[i]; r.vz=p.vz[i];
     r.fx=p.fx[i]; r.fy=p.fy[i]; r.fz=p.fz[i];
     r.mass=p.mass[i]; r.charge=p.charge[i];
     r.type=p.type[i]; r.global_id=p.global_id[i];
-    packed[k]=r;
+    unsigned char* record=packed+k*fields.stride;
+    *reinterpret_cast<ParticleRecord*>(record)=r;
+    store_wire_fields(fields,record,i);
+}
+
+// Destinations are ranks in [0, rank_count), so only the bits needed to
+// represent rank_count - 1 take part in the sort.
+int destination_end_bit(std::size_t rank_count) {
+    int bits = 1;
+    while (bits < 31 && (std::size_t{1} << bits) < rank_count) ++bits;
+    return bits;
 }
 
 } // namespace
@@ -54,7 +60,8 @@ std::size_t migration_layout_temporary_bytes(std::size_t particle_count,
         cub::DeviceRadixSort::SortPairs(
             nullptr,sort_bytes,static_cast<const int*>(nullptr),
             static_cast<int*>(nullptr),static_cast<const unsigned int*>(nullptr),
-            static_cast<unsigned int*>(nullptr),particle_count);
+            static_cast<unsigned int*>(nullptr),particle_count,0,
+            destination_end_bit(rank_count));
     }
     cub::DeviceScan::ExclusiveSum(
         nullptr,scan_bytes,static_cast<const unsigned int*>(nullptr),
@@ -67,7 +74,8 @@ void launch_build_migration_layout(
     const int* destinations, int* sorted_destinations,
     unsigned int* indices, unsigned int* sorted_indices,
     unsigned int* counts, unsigned int* offsets,
-    ParticleRecord* packed_records, std::size_t rank_count,
+    unsigned char* packed_records, const WireFields& fields,
+    std::size_t rank_count,
     void* temporary, std::size_t temporary_bytes,
     cudaStream_t stream) {
     detail::check(cudaMemsetAsync(counts,0,rank_count*sizeof(unsigned int),stream),
@@ -84,7 +92,7 @@ void launch_build_migration_layout(
     detail::check(cudaGetLastError(),"initialize migration layout");
     detail::check(cub::DeviceRadixSort::SortPairs(
                       temporary,temporary_bytes,destinations,sorted_destinations,
-                      indices,sorted_indices,particles.count,0,sizeof(int)*8,stream),
+                      indices,sorted_indices,particles.count,0,destination_end_bit(rank_count),stream),
                   "stable migration radix sort");
     detail::check(cub::DeviceScan::ExclusiveSum(
                       temporary,temporary_bytes,counts,offsets,rank_count,stream),
@@ -94,7 +102,8 @@ void launch_build_migration_layout(
         {domain.upper[0],domain.upper[1],domain.upper[2]},
         {domain.periodic[0],domain.periodic[1],domain.periodic[2]}};
     pack_sorted_kernel<<<blocks,threads,0,stream>>>(
-        particles,device_domain,sorted_indices,packed_records);
+        particles,device_domain,sorted_indices,packed_records,
+        to_device_fields(fields));
     detail::check(cudaGetLastError(),"pack sorted migration records");
 }
 

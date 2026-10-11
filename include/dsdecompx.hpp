@@ -19,6 +19,9 @@ struct HaloResult {
     std::size_t ghost_count = 0;
     bool layout_changed = false;
     bool storage_reallocated = false;
+    // CUDA memory only: the previous plan was refreshed in place. Identical on
+    // every rank for a collective call, so it can gate collectives.
+    bool plan_reused = false;
 };
 
 struct HaloExchangeOptions {
@@ -172,6 +175,20 @@ public:
 
     HaloResult exchange_halo(ParticleInfo& particles,
                              HaloExchangeOptions options = {});
+    // Split-phase form of exchange_halo() for overlapping the exchange with work
+    // that touches only owned particles. begin_halo_exchange() posts the
+    // exchange (device memory: packs and starts the transfers on options.stream);
+    // end_halo_exchange() completes it, unpacks the ghosts and returns the same
+    // result exchange_halo() would. Between the calls `particles` must not be
+    // resized or exchanged again, and no other halo/migration/reverse operation
+    // may start. exchange_halo() is exactly begin followed by end.
+    void begin_halo_exchange(ParticleInfo& particles,
+                             HaloExchangeOptions options = {});
+    HaloResult end_halo_exchange(ParticleInfo& particles);
+    // True when a non-rebuild device exchange of `particles` would refresh the
+    // existing halo plan in place, i.e. ghost slots keep their meaning and the
+    // ghost count is already known. Always false for host memory.
+    bool can_refresh_halo(const ParticleInfo& particles) const;
     MigrationResult migrate(ParticleInfo& particles,
                             ExecutionStream stream = nullptr);
     // Collective operation. Moves nonuniform Cartesian cut planes using the

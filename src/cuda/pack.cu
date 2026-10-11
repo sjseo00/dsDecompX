@@ -1,33 +1,203 @@
 #include "kernels.hpp"
 #include "cuda_error.hpp"
-
-#include <cub/device/device_scan.cuh>
-#include <cmath>
+#include "wire.cuh"
 
 namespace dsdecompx::cuda {
 namespace {
 
-struct DeviceShift { double value[3]; };
+constexpr int kThreads = 256;
+constexpr int kWarps = kThreads / 32;
+constexpr int kMax = static_cast<int>(kMaxHaloNeighbors);
+
 struct DeviceLocalDomain { double lower[3]; double upper[3]; };
-struct DeviceDirection { int value[3]; };
-struct DeviceDomain {
-    double lower[3]; double upper[3]; bool periodic[3];
+
+struct DeviceHaloSpec {
+    int count;
+    unsigned int active;
+    int direction[kMax][3];
+    double shift[kMax][3];
+    std::size_t offset[kMax];
 };
 
-__global__ void pack_kernel(ConstParticleView p, const int* indices,
-                            std::size_t count, DeviceShift shift,
-                            ParticleRecord* output) {
-    const std::size_t k = blockIdx.x * blockDim.x + threadIdx.x;
-    if (k >= count) return;
-    const int i = indices[k];
-    ParticleRecord record;
-    record.x = p.x[i] + shift.value[0]; record.y = p.y[i] + shift.value[1];
-    record.z = p.z[i] + shift.value[2];
-    record.vx = p.vx[i]; record.vy = p.vy[i]; record.vz = p.vz[i];
-    record.fx = 0.0; record.fy = 0.0; record.fz = 0.0;
-    record.mass = p.mass[i]; record.charge = p.charge[i];
-    record.type = p.type[i]; record.global_id = p.global_id[i];
-    output[k] = record;
+DeviceHaloSpec to_device(const HaloPackSpec& spec) {
+    DeviceHaloSpec device{};
+    device.count = static_cast<int>(spec.neighbor_count);
+    for (int n = 0; n < device.count; ++n) {
+        if (spec.active[n]) device.active |= (1u << n);
+        for (int axis = 0; axis < 3; ++axis) {
+            device.direction[n][axis] = spec.direction[n][axis];
+            device.shift[n][axis] = spec.periodic_shift[n][axis];
+        }
+        device.offset[n] = spec.offset[n];
+    }
+    return device;
+}
+
+// Bit n is set when the particle lies in the halo slab sent to neighbor n.
+__device__ unsigned int halo_mask(const ConstParticleView& p, std::size_t i,
+                                  const DeviceLocalDomain& local,
+                                  const DeviceHaloSpec& spec, double width) {
+    const double position[3] = {p.x[i], p.y[i], p.z[i]};
+    bool low[3], high[3];
+    for (int axis = 0; axis < 3; ++axis) {
+        low[axis] = position[axis] < local.lower[axis] + width;
+        high[axis] = position[axis] >= local.upper[axis] - width;
+    }
+    unsigned int mask = 0;
+    for (int n = 0; n < kMax; ++n) {
+        if (n >= spec.count || !((spec.active >> n) & 1u)) continue;
+        bool selected = true;
+        for (int axis = 0; axis < 3; ++axis) {
+            const int d = spec.direction[n][axis];
+            if (d < 0) selected = selected && low[axis];
+            else if (d > 0) selected = selected && high[axis];
+        }
+        if (selected) mask |= (1u << n);
+    }
+    return mask;
+}
+
+// Pass 1: one thread per particle classifies against all neighbors at once and
+// each block reports how many of its particles go to every neighbor.
+__global__ void halo_classify_kernel(ConstParticleView p, DeviceLocalDomain local,
+                                     DeviceHaloSpec spec, double width,
+                                     unsigned int* masks,
+                                     unsigned int* block_counts) {
+    __shared__ unsigned int warp_counts[kWarps][kMax];
+    const std::size_t i = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    unsigned int mask = 0;
+    if (i < p.count) {
+        mask = halo_mask(p, i, local, spec, width);
+        masks[i] = mask;
+    }
+    const int warp = threadIdx.x >> 5;
+    const int lane = threadIdx.x & 31;
+    // Every lane must reach the ballot, including those past the last particle.
+#pragma unroll
+    for (int n = 0; n < kMax; ++n) {
+        const unsigned int ballot = __ballot_sync(0xffffffffu, (mask >> n) & 1u);
+        if (lane == 0) warp_counts[warp][n] = __popc(ballot);
+    }
+    __syncthreads();
+    if (threadIdx.x < kMax) {
+        unsigned int sum = 0;
+        for (int w = 0; w < kWarps; ++w) sum += warp_counts[w][threadIdx.x];
+        block_counts[blockIdx.x * kMax + threadIdx.x] = sum;
+    }
+}
+
+// Pass 2: one thread block per neighbor turns block counts into exclusive
+// block offsets and reports the neighbor total.
+__global__ void halo_scan_blocks_kernel(unsigned int* block_counts,
+                                        unsigned int num_blocks,
+                                        unsigned int* totals) {
+    __shared__ unsigned int warp_sums[kWarps];
+    __shared__ unsigned int carry;
+    const unsigned int n = blockIdx.x;
+    if (threadIdx.x == 0) carry = 0;
+    __syncthreads();
+    const unsigned int lane = threadIdx.x & 31;
+    const unsigned int warp = threadIdx.x >> 5;
+    for (unsigned int base = 0; base < num_blocks; base += blockDim.x) {
+        const unsigned int b = base + threadIdx.x;
+        const unsigned int value = b < num_blocks ? block_counts[b * kMax + n] : 0u;
+        unsigned int inclusive = value;
+        for (int offset = 1; offset < 32; offset <<= 1) {
+            const unsigned int other = __shfl_up_sync(0xffffffffu, inclusive, offset);
+            if (lane >= static_cast<unsigned int>(offset)) inclusive += other;
+        }
+        if (lane == 31) warp_sums[warp] = inclusive;
+        __syncthreads();
+        unsigned int warp_base = 0, tile_total = 0;
+        for (unsigned int w = 0; w < kWarps; ++w) {
+            if (w < warp) warp_base += warp_sums[w];
+            tile_total += warp_sums[w];
+        }
+        const unsigned int running = carry;
+        if (b < num_blocks)
+            block_counts[b * kMax + n] = running + warp_base + inclusive - value;
+        __syncthreads();
+        if (threadIdx.x == 0) carry = running + tile_total;
+        __syncthreads();
+    }
+    if (threadIdx.x == 0) totals[n] = carry;
+}
+
+// Fills one forward halo wire record from owned particle `i`. Shared by the
+// scatter pass (new plan) and the gather pass (reused plan) so both produce
+// byte-identical records.
+__device__ inline void store_halo_record(const ConstParticleView& p, std::size_t i,
+                                         const double* shift,
+                                         const DeviceWireFields& fields,
+                                         unsigned char* record) {
+    ParticleRecord r;
+    r.x = p.x[i] + shift[0]; r.y = p.y[i] + shift[1]; r.z = p.z[i] + shift[2];
+    r.vx = p.vx[i]; r.vy = p.vy[i]; r.vz = p.vz[i];
+    // Forward ghosts start with zero force, matching the host path.
+    r.fx = 0.0; r.fy = 0.0; r.fz = 0.0;
+    r.mass = p.mass[i]; r.charge = p.charge[i];
+    r.type = p.type[i]; r.global_id = p.global_id[i];
+    *reinterpret_cast<ParticleRecord*>(record) = r;
+    store_wire_fields(fields, record, i);
+}
+
+// Pass 3: stable scatter. Position inside a neighbor's block is
+// block offset + earlier warps + earlier lanes, so ghosts keep owned order.
+__global__ void halo_scatter_kernel(ConstParticleView p, DeviceHaloSpec spec,
+                                    const unsigned int* masks,
+                                    const unsigned int* block_offsets,
+                                    unsigned char* output,
+                                    unsigned int* source_indices,
+                                    DeviceWireFields fields) {
+    __shared__ unsigned int warp_counts[kWarps][kMax];
+    const std::size_t i = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    const unsigned int mask = i < p.count ? masks[i] : 0u;
+    const int warp = threadIdx.x >> 5;
+    const int lane = threadIdx.x & 31;
+    const unsigned int lane_below = (1u << lane) - 1u;
+    unsigned int rank_in_warp[kMax];
+#pragma unroll
+    for (int n = 0; n < kMax; ++n) {
+        const unsigned int ballot = __ballot_sync(0xffffffffu, (mask >> n) & 1u);
+        rank_in_warp[n] = __popc(ballot & lane_below);
+        if (lane == 0) warp_counts[warp][n] = __popc(ballot);
+    }
+    __syncthreads();
+    if (i >= p.count || !mask) return;
+    for (int n = 0; n < kMax; ++n) {
+        if (!((mask >> n) & 1u)) continue;
+        unsigned int earlier_warps = 0;
+        for (int w = 0; w < warp; ++w) earlier_warps += warp_counts[w][n];
+        const std::size_t slot = spec.offset[n] + block_offsets[blockIdx.x * kMax + n] +
+                                 earlier_warps + rank_in_warp[n];
+        store_halo_record(p, i, spec.shift[n], fields,
+                          output + slot * fields.stride);
+        // Remember the owner of each ghost so the reverse halo can map forces
+        // back by index instead of searching global IDs.
+        source_indices[slot] = static_cast<unsigned int>(i);
+    }
+}
+
+struct DeviceGatherSpec {
+    int count;
+    double shift[kMax][3];
+    std::size_t end[kMax];  // one past the last slot of each neighbor block
+};
+
+// Reused-plan refresh: slot k re-reads owned particle source_indices[k], so the
+// ghost list (membership and order) stays exactly as the plan fixed it.
+__global__ void halo_gather_kernel(ConstParticleView p, DeviceGatherSpec spec,
+                                   std::size_t total,
+                                   const unsigned int* source_indices,
+                                   unsigned char* output,
+                                   DeviceWireFields fields) {
+    const std::size_t slot = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (slot >= total) return;
+    // Blocks are contiguous and may be empty; the first end beyond `slot` owns it.
+    int n = 0;
+    while (n + 1 < spec.count && slot >= spec.end[n]) ++n;
+    store_halo_record(p, source_indices[slot], spec.shift[n], fields,
+                      output + slot * fields.stride);
 }
 
 __global__ void pack_reverse_kernel(ParticleView p, std::size_t source_offset,
@@ -37,97 +207,67 @@ __global__ void pack_reverse_kernel(ParticleView p, std::size_t source_offset,
     const std::size_t i=source_offset+k;
     ParticleRecord record;
     record.fx=p.fx[i]; record.fy=p.fy[i]; record.fz=p.fz[i];
-    record.global_id=p.global_id[i];
     output[k]=record;
-}
-
-__global__ void mark_halo_kernel(ConstParticleView p, DeviceLocalDomain local,
-                                 DeviceDirection direction, double width,
-                                 unsigned int* flags) {
-    const std::size_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= p.count) return;
-    bool selected = true;
-    const double position[3] = {p.x[i], p.y[i], p.z[i]};
-    for (int axis = 0; axis < 3; ++axis) {
-        if (direction.value[axis] < 0)
-            selected = selected && position[axis] < local.lower[axis] + width;
-        else if (direction.value[axis] > 0)
-            selected = selected && position[axis] >= local.upper[axis] - width;
-    }
-    flags[i] = selected ? 1u : 0u;
-}
-
-__global__ void scatter_halo_kernel(ConstParticleView p,
-                                    const unsigned int* flags,
-                                    const unsigned int* offsets,
-                                    DeviceShift shift, ParticleRecord* output) {
-    const std::size_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= p.count || !flags[i]) return;
-    ParticleRecord r;
-    r.x=p.x[i]+shift.value[0]; r.y=p.y[i]+shift.value[1];
-    r.z=p.z[i]+shift.value[2];
-    r.vx=p.vx[i]; r.vy=p.vy[i]; r.vz=p.vz[i];
-    // Match the host reference semantics: forward ghosts start with zero force.
-    r.fx=0.0; r.fy=0.0; r.fz=0.0;
-    r.mass=p.mass[i]; r.charge=p.charge[i];
-    r.type=p.type[i]; r.global_id=p.global_id[i];
-    output[offsets[i]] = r;
-}
-
-__global__ void finalize_halo_count_kernel(const unsigned int* flags,
-                                           const unsigned int* offsets,
-                                           std::size_t count,
-                                           unsigned int* output_count) {
-    if (threadIdx.x || blockIdx.x) return;
-    *output_count = count ? offsets[count-1] + flags[count-1] : 0u;
-}
-
-__global__ void mark_destination_kernel(const int* destinations,
-                                        std::size_t count, int target,
-                                        unsigned int* flags) {
-    const std::size_t i=blockIdx.x*blockDim.x+threadIdx.x;
-    if (i<count) flags[i]=destinations[i]==target?1u:0u;
-}
-
-__device__ double wrap_coordinate(double value, double lower, double upper,
-                                  bool periodic) {
-    if (!periodic) return value;
-    const double extent=upper-lower;
-    value-=lower;
-    value-=floor(value/extent)*extent;
-    return value+lower;
-}
-
-__global__ void scatter_migration_kernel(ConstParticleView p,
-                                         DeviceDomain domain,
-                                         const unsigned int* flags,
-                                         const unsigned int* offsets,
-                                         ParticleRecord* output) {
-    const std::size_t i=blockIdx.x*blockDim.x+threadIdx.x;
-    if (i>=p.count || !flags[i]) return;
-    ParticleRecord r;
-    r.x=wrap_coordinate(p.x[i],domain.lower[0],domain.upper[0],domain.periodic[0]);
-    r.y=wrap_coordinate(p.y[i],domain.lower[1],domain.upper[1],domain.periodic[1]);
-    r.z=wrap_coordinate(p.z[i],domain.lower[2],domain.upper[2],domain.periodic[2]);
-    r.vx=p.vx[i]; r.vy=p.vy[i]; r.vz=p.vz[i];
-    r.fx=p.fx[i]; r.fy=p.fy[i]; r.fz=p.fz[i];
-    r.mass=p.mass[i]; r.charge=p.charge[i];
-    r.type=p.type[i]; r.global_id=p.global_id[i];
-    output[offsets[i]]=r;
 }
 
 } // namespace
 
-void launch_pack_records(const ConstParticleView& particles,
-                         const int* indices, std::size_t count,
-                         Vec3d periodic_shift, ParticleRecord* output,
-                         cudaStream_t stream) {
-    if (!count) return;
-    const DeviceShift shift{{periodic_shift[0], periodic_shift[1], periodic_shift[2]}};
-    constexpr int threads = 256;
-    pack_kernel<<<static_cast<unsigned>((count + threads - 1) / threads),
-                  threads, 0, stream>>>(particles, indices, count, shift, output);
-    detail::check(cudaGetLastError(), "launch pack kernel");
+std::size_t halo_block_count(std::size_t particle_count) {
+    return (particle_count + kThreads - 1) / kThreads;
+}
+
+void launch_halo_classify(const ConstParticleView& particles,
+                          LocalDomain local_domain, double halo_width,
+                          const HaloPackSpec& spec, unsigned int* masks,
+                          unsigned int* block_counts, unsigned int* totals,
+                          cudaStream_t stream) {
+    if (!particles.count || !spec.neighbor_count) return;
+    const unsigned blocks = static_cast<unsigned>(halo_block_count(particles.count));
+    const DeviceLocalDomain local{{local_domain.lower[0], local_domain.lower[1],
+                                   local_domain.lower[2]},
+                                  {local_domain.upper[0], local_domain.upper[1],
+                                   local_domain.upper[2]}};
+    halo_classify_kernel<<<blocks, kThreads, 0, stream>>>(
+        particles, local, to_device(spec), halo_width, masks, block_counts);
+    detail::check(cudaGetLastError(), "launch halo classification kernel");
+    halo_scan_blocks_kernel<<<static_cast<unsigned>(spec.neighbor_count), kThreads,
+                              0, stream>>>(block_counts, blocks, totals);
+    detail::check(cudaGetLastError(), "launch halo block scan kernel");
+}
+
+void launch_halo_scatter(const ConstParticleView& particles,
+                         const HaloPackSpec& spec, const unsigned int* masks,
+                         const unsigned int* block_offsets,
+                         unsigned char* output, unsigned int* source_indices,
+                         const WireFields& fields, cudaStream_t stream) {
+    if (!particles.count || !spec.neighbor_count) return;
+    halo_scatter_kernel<<<static_cast<unsigned>(halo_block_count(particles.count)),
+                          kThreads, 0, stream>>>(
+        particles, to_device(spec), masks, block_offsets, output, source_indices,
+        to_device_fields(fields));
+    detail::check(cudaGetLastError(), "launch halo scatter kernel");
+}
+
+void launch_halo_gather(const ConstParticleView& particles,
+                        const HaloPackSpec& spec, const unsigned int* counts,
+                        const unsigned int* source_indices,
+                        unsigned char* output, const WireFields& fields,
+                        cudaStream_t stream) {
+    if (!spec.neighbor_count) return;
+    DeviceGatherSpec device{};
+    device.count = static_cast<int>(spec.neighbor_count);
+    std::size_t total = 0;
+    for (int n = 0; n < device.count; ++n) {
+        for (int axis = 0; axis < 3; ++axis)
+            device.shift[n][axis] = spec.periodic_shift[n][axis];
+        total = spec.offset[n] + counts[n];
+        device.end[n] = total;
+    }
+    if (!total) return;
+    halo_gather_kernel<<<static_cast<unsigned>((total + kThreads - 1) / kThreads),
+                         kThreads, 0, stream>>>(
+        particles, device, total, source_indices, output, to_device_fields(fields));
+    detail::check(cudaGetLastError(), "launch halo gather kernel");
 }
 
 void launch_pack_reverse_records(const ParticleView& particles,
@@ -141,77 +281,6 @@ void launch_pack_reverse_records(const ParticleView& particles,
                           threads,0,stream>>>(
         particles,source_offset,count,output);
     detail::check(cudaGetLastError(),"launch reverse halo pack kernel");
-}
-
-void launch_pack_halo_neighbor(const ConstParticleView& particles,
-                               LocalDomain local_domain, Vec3i direction,
-                               Vec3d periodic_shift, double halo_width,
-                               unsigned int* flags, unsigned int* offsets,
-                               ParticleRecord* output,
-                               unsigned int* output_count,
-                               void* scan_temporary,
-                               std::size_t scan_temporary_bytes,
-                               cudaStream_t stream) {
-    if (!particles.count) {
-        detail::check(cudaMemsetAsync(output_count, 0, sizeof(unsigned int), stream),
-                      "clear empty halo count");
-        return;
-    }
-    constexpr int threads = 256;
-    const unsigned blocks =
-        static_cast<unsigned>((particles.count + threads - 1) / threads);
-    const DeviceLocalDomain local{{local_domain.lower[0], local_domain.lower[1],
-                                   local_domain.lower[2]},
-                                  {local_domain.upper[0], local_domain.upper[1],
-                                   local_domain.upper[2]}};
-    const DeviceDirection device_direction{{direction[0], direction[1], direction[2]}};
-    const DeviceShift shift{{periodic_shift[0], periodic_shift[1], periodic_shift[2]}};
-    mark_halo_kernel<<<blocks,threads,0,stream>>>(
-        particles, local, device_direction, halo_width, flags);
-    detail::check(cudaGetLastError(), "launch halo classification kernel");
-    detail::check(cub::DeviceScan::ExclusiveSum(
-                      scan_temporary, scan_temporary_bytes,
-                      flags, offsets, particles.count, stream),
-                  "halo prefix scan");
-    scatter_halo_kernel<<<blocks,threads,0,stream>>>(
-        particles, flags, offsets, shift, output);
-    detail::check(cudaGetLastError(), "launch stable halo packing kernel");
-    finalize_halo_count_kernel<<<1,1,0,stream>>>(
-        flags, offsets, particles.count, output_count);
-    detail::check(cudaGetLastError(), "launch halo count kernel");
-}
-
-void launch_pack_migration_destination(
-    const ConstParticleView& particles, GlobalDomain domain,
-    const int* destinations, int target_rank,
-    unsigned int* flags, unsigned int* offsets,
-    ParticleRecord* output, unsigned int* output_count,
-    void* scan_temporary, std::size_t scan_temporary_bytes,
-    cudaStream_t stream) {
-    if (!particles.count) {
-        detail::check(cudaMemsetAsync(output_count,0,sizeof(unsigned int),stream),
-                      "clear empty migration count");
-        return;
-    }
-    constexpr int threads=256;
-    const unsigned blocks=static_cast<unsigned>((particles.count+threads-1)/threads);
-    mark_destination_kernel<<<blocks,threads,0,stream>>>(
-        destinations,particles.count,target_rank,flags);
-    detail::check(cudaGetLastError(),"launch migration destination marking");
-    detail::check(cub::DeviceScan::ExclusiveSum(
-                      scan_temporary,scan_temporary_bytes,
-                      flags,offsets,particles.count,stream),
-                  "migration destination prefix scan");
-    const DeviceDomain device_domain{
-        {domain.lower[0],domain.lower[1],domain.lower[2]},
-        {domain.upper[0],domain.upper[1],domain.upper[2]},
-        {domain.periodic[0],domain.periodic[1],domain.periodic[2]}};
-    scatter_migration_kernel<<<blocks,threads,0,stream>>>(
-        particles,device_domain,flags,offsets,output);
-    detail::check(cudaGetLastError(),"launch migration destination packing");
-    finalize_halo_count_kernel<<<1,1,0,stream>>>(
-        flags,offsets,particles.count,output_count);
-    detail::check(cudaGetLastError(),"launch migration destination count");
 }
 
 } // namespace dsdecompx::cuda

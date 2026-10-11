@@ -12,10 +12,16 @@ endif()
 if(dsDecompX_WITH_NCCL OR dsDecompX_WITH_NVSHMEM)
     list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 endif()
+# Where dsDecompX itself found the libraries; the Find modules try these first
+# so a consumer does not need to repeat -DNCCL_ROOT / -DNVSHMEM_ROOT.
 if(dsDecompX_WITH_NCCL)
+    set(DSDECOMPX_NCCL_INCLUDE_HINT "@NCCL_INCLUDE_DIR@")
+    set(DSDECOMPX_NCCL_LIBRARY_HINT "@NCCL_LIBRARY@")
     find_dependency(NCCL REQUIRED MODULE)
 endif()
 if(dsDecompX_WITH_NVSHMEM)
+    set(DSDECOMPX_NVSHMEM_INCLUDE_HINT "@NVSHMEM_INCLUDE_DIR@")
+    set(DSDECOMPX_NVSHMEM_LIBRARY_HINT "@NVSHMEM_HOST_LIBRARY@")
     find_dependency(NVSHMEM REQUIRED MODULE)
 endif()
 

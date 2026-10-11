@@ -1,30 +1,27 @@
 #include "kernels.hpp"
 #include "cuda_error.hpp"
+#include "wire.cuh"
 
 namespace dsdecompx::cuda {
 namespace {
 
-__device__ double reverse_atomic_add(double* address,double value) {
-#if __CUDA_ARCH__ >= 600
-    return atomicAdd(address,value);
-#else
-    auto* integer=reinterpret_cast<unsigned long long*>(address);
-    unsigned long long old=*integer,assumed;
-    do {
-        assumed=old;
-        old=atomicCAS(integer,assumed,
-            __double_as_longlong(value+__longlong_as_double(assumed)));
-    } while (assumed!=old);
-    return __longlong_as_double(old);
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
+#error "dsDecompX requires compute capability 6.0 or newer (double atomicAdd); set CMAKE_CUDA_ARCHITECTURES accordingly"
 #endif
+
+__device__ double reverse_atomic_add(double* address,double value) {
+    return atomicAdd(address,value);
 }
 
-__global__ void unpack_kernel(const ParticleRecord* input, std::size_t count,
-                              ParticleView p, std::size_t offset) {
+__global__ void unpack_kernel(const unsigned char* input, std::size_t count,
+                              ParticleView p, std::size_t offset,
+                              DeviceWireFields fields) {
     const std::size_t k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= count) return;
     const std::size_t i = offset + k;
-    const ParticleRecord r = input[k];
+    const unsigned char* record = input + k * fields.stride;
+    const ParticleRecord r = *reinterpret_cast<const ParticleRecord*>(record);
+    load_wire_fields(fields, record, i);
     if (p.x) p.x[i] = r.x; if (p.y) p.y[i] = r.y; if (p.z) p.z[i] = r.z;
     if (p.vx) p.vx[i] = r.vx; if (p.vy) p.vy[i] = r.vy; if (p.vz) p.vz[i] = r.vz;
     if (p.fx) p.fx[i] = r.fx; if (p.fy) p.fy[i] = r.fy; if (p.fz) p.fz[i] = r.fz;
@@ -33,46 +30,45 @@ __global__ void unpack_kernel(const ParticleRecord* input, std::size_t count,
     if (p.global_id) p.global_id[i] = r.global_id;
 }
 
+// Record k came back from the neighbor it was originally sent to, in the same
+// order it was packed, so source_indices[k] is the owned particle it maps to.
 __global__ void accumulate_reverse_kernel(const ParticleRecord* input,
                                           std::size_t count,
-                                          ParticleView p,
-                                          std::size_t owned_count) {
+                                          const unsigned int* source_indices,
+                                          ParticleView p) {
     const std::size_t k=blockIdx.x*blockDim.x+threadIdx.x;
     if (k>=count) return;
     const ParticleRecord record=input[k];
-    for (std::size_t i=0;i<owned_count;++i) {
-        if (p.global_id[i]==record.global_id) {
-            reverse_atomic_add(p.fx+i,record.fx);
-            reverse_atomic_add(p.fy+i,record.fy);
-            reverse_atomic_add(p.fz+i,record.fz);
-            break;
-        }
-    }
+    const std::size_t i=source_indices[k];
+    reverse_atomic_add(p.fx+i,record.fx);
+    reverse_atomic_add(p.fy+i,record.fy);
+    reverse_atomic_add(p.fz+i,record.fz);
 }
 
 } // namespace
 
-void launch_unpack_records(const ParticleRecord* records, std::size_t count,
+void launch_unpack_records(const unsigned char* records, std::size_t count,
                            ParticleView particles, std::size_t destination_offset,
-                           cudaStream_t stream) {
+                           const WireFields& fields, cudaStream_t stream) {
     if (!count) return;
     constexpr int threads = 256;
     unpack_kernel<<<static_cast<unsigned>((count + threads - 1) / threads),
                     threads, 0, stream>>>(records, count, particles,
-                                          destination_offset);
+                                          destination_offset,
+                                          to_device_fields(fields));
     detail::check(cudaGetLastError(), "launch unpack kernel");
 }
 
 void launch_accumulate_reverse_records(const ParticleRecord* records,
                                        std::size_t count,
+                                       const unsigned int* source_indices,
                                        ParticleView particles,
-                                       std::size_t owned_count,
                                        cudaStream_t stream) {
     if (!count) return;
     constexpr int threads=256;
     accumulate_reverse_kernel<<<static_cast<unsigned>((count+threads-1)/threads),
                                 threads,0,stream>>>(
-        records,count,particles,owned_count);
+        records,count,source_indices,particles);
     detail::check(cudaGetLastError(),"launch reverse halo accumulation kernel");
 }
 

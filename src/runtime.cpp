@@ -13,6 +13,7 @@
 #include <array>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -103,8 +104,7 @@ void require_output_capacity(const ParticleView& view, std::size_t required) {
     }
 }
 
-void validate_collective_field_schema(MPI_Comm communicator,
-                                      const ConstParticleView& view) {
+std::uint64_t field_schema_hash(const ConstParticleView& view) {
     std::uint64_t hash=1469598103934665603ull;
     const auto mix=[&](std::uint64_t value) {
         hash^=value;
@@ -118,9 +118,16 @@ void validate_collective_field_schema(MPI_Comm communicator,
         mix(static_cast<std::uint8_t>(field.type));
         mix(field.components);
     }
-    unsigned long long local=hash,minimum=0,maximum=0;
-    MPI_Allreduce(&local,&minimum,1,MPI_UNSIGNED_LONG_LONG,MPI_MIN,communicator);
-    MPI_Allreduce(&local,&maximum,1,MPI_UNSIGNED_LONG_LONG,MPI_MAX,communicator);
+    return hash;
+}
+
+void validate_collective_field_schema(MPI_Comm communicator,
+                                      std::uint64_t hash) {
+    // One reduction instead of a MIN and a MAX: the minimum of the hash and of
+    // its complement gives both extremes (max == ~min(~hash)).
+    unsigned long long local[2]={hash,~hash},extreme[2]={0,0};
+    MPI_Allreduce(local,extreme,2,MPI_UNSIGNED_LONG_LONG,MPI_MIN,communicator);
+    const unsigned long long minimum=extreme[0],maximum=~extreme[1];
     if (minimum!=maximum) {
         throw std::invalid_argument(
             "dsDecompX: custom field names, types, components, and order "
@@ -133,6 +140,93 @@ void cuda_require(cudaError_t status, const char* operation) {
     if (status != cudaSuccess) {
         throw std::runtime_error(std::string("dsDecompX: ") + operation +
                                  ": " + cudaGetErrorString(status));
+    }
+}
+
+// Collective. Selects this rank's GPU per Config::advanced.cuda_device and, for
+// backends that need one GPU per rank (NCCL, NVSHMEM), verifies that ranks on
+// the same node did not end up sharing a GPU while enough GPUs were visible.
+void select_cuda_device(MPI_Comm communicator, const Config& config) {
+    constexpr int kBusIdBytes = 32;
+    const int requested = config.advanced.cuda_device;
+    const BackendSelection backend = requested_backend(config);
+    const bool exclusive_required = backend == BackendSelection::Nccl ||
+                                    backend == BackendSelection::Nvshmem;
+
+    int device_count = 0;
+    int local_error = 0;
+    if (cudaGetDeviceCount(&device_count) != cudaSuccess || device_count <= 0)
+        local_error = 1;
+
+    MPI_Comm node = MPI_COMM_NULL;
+    MPI_Comm_split_type(communicator, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL,
+                        &node);
+    int local_rank = 0, local_size = 1;
+    MPI_Comm_rank(node, &local_rank);
+    MPI_Comm_size(node, &local_size);
+
+    int device = -1;
+    if (!local_error) {
+        if (requested == kCudaDeviceByLocalRank) {
+            device = local_rank % device_count;
+        } else if (requested >= 0) {
+            if (requested < device_count) device = requested;
+            else local_error = 2;
+        } else if (cudaGetDevice(&device) != cudaSuccess) {
+            local_error = 3;
+        }
+        if (!local_error && requested != kCudaDeviceCurrent &&
+            cudaSetDevice(device) != cudaSuccess) {
+            local_error = 3;
+        }
+    }
+
+    // Physical identity (PCI bus id) so CUDA_VISIBLE_DEVICES remapping cannot
+    // make two different GPUs look equal or one GPU look different.
+    char bus_id[kBusIdBytes] = {};
+    if (!local_error &&
+        cudaDeviceGetPCIBusId(bus_id, kBusIdBytes, device) != cudaSuccess) {
+        local_error = 3;
+    }
+    std::vector<char> node_bus_ids(static_cast<std::size_t>(kBusIdBytes) *
+                                   static_cast<std::size_t>(local_size));
+    MPI_Allgather(bus_id, kBusIdBytes, MPI_CHAR, node_bus_ids.data(),
+                  kBusIdBytes, MPI_CHAR, node);
+    int shared = 0;
+    if (exclusive_required && !local_error && local_size <= device_count) {
+        for (int i = 0; i < local_size && !shared; ++i) {
+            const char* first = node_bus_ids.data() +
+                                static_cast<std::size_t>(i) * kBusIdBytes;
+            if (!*first) continue;
+            for (int j = i + 1; j < local_size; ++j) {
+                if (std::strncmp(first,
+                        node_bus_ids.data() +
+                            static_cast<std::size_t>(j) * kBusIdBytes,
+                        kBusIdBytes) == 0) {
+                    shared = 1;
+                    break;
+                }
+            }
+        }
+    }
+    MPI_Comm_free(&node);
+
+    // Reduce so every rank fails together instead of some hanging in the next
+    // collective.
+    int flags[2] = {local_error, shared};
+    int worst[2] = {0, 0};
+    MPI_Allreduce(flags, worst, 2, MPI_INT, MPI_MAX, communicator);
+    if (worst[0] != 0) {
+        throw std::runtime_error(
+            "dsDecompX: could not select a CUDA device (no visible device, "
+            "Config::advanced.cuda_device out of range, or cudaSetDevice failed)");
+    }
+    if (worst[1] != 0) {
+        throw std::runtime_error(
+            "dsDecompX: the NCCL/NVSHMEM backend needs one GPU per rank, but ranks "
+            "on the same node share a GPU although enough GPUs are visible; set "
+            "Config::advanced.cuda_device = kCudaDeviceByLocalRank or call "
+            "cudaSetDevice per rank before creating Decomp");
     }
 }
 
@@ -208,6 +302,22 @@ struct Decomp::Impl {
     DynamicLoadBalanceConfig dynamic;
     std::size_t migration_calls = 0;
     bool rebalance_in_progress = false;
+    // Schema hash last agreed on by every rank (device halo only, see
+    // exchange_halo): while a halo plan is reused the schema cannot change, so
+    // the collective check is skipped.
+    bool schema_validated = false;
+    std::uint64_t validated_schema_hash = 0;
+
+    // A split-phase halo exchange between begin_halo_exchange() and
+    // end_halo_exchange().
+    struct PendingHalo {
+        HaloExchangeHandle handle;
+        HaloExchangeOptions options;
+        std::size_t owned = 0;
+        MemorySpace memory_space = MemorySpace::Host;
+        std::vector<int> previous_ghost_ids;
+        bool active = false;
+    } pending_halo;
 
     ~Impl() {
         decomposition.reset();
@@ -669,6 +779,11 @@ Decomp::Decomp(MPI_Comm communicator, Config config)
           config.dynamic.minimum_cell_fraction <= 1.0)) {
         throw std::invalid_argument("dsDecompX: invalid dynamic load-balance configuration");
     }
+#if HAS_CUDA
+    if (config.execution == ExecutionMode::Cuda) {
+        select_cuda_device(communicator, config);
+    }
+#endif
     MPI_Comm_dup(communicator, &impl_->collective_comm);
     impl_->halo_width = config.halo.width;
     impl_->dynamic = config.dynamic;
@@ -732,11 +847,41 @@ void Decomp::invalidate_halo() noexcept {
 
 HaloResult Decomp::exchange_halo(ParticleInfo& particles,
                                  HaloExchangeOptions options) {
+    begin_halo_exchange(particles, options);
+    return end_halo_exchange(particles);
+}
+
+bool Decomp::can_refresh_halo(const ParticleInfo& particles) const {
+    const std::size_t owned = particles.owned_count();
+    ConstParticleView input = particles.read_view(owned);
+    input.count = owned;
+    return impl_->decomposition->can_refresh_halo_plan(input);
+}
+
+void Decomp::begin_halo_exchange(ParticleInfo& particles,
+                                 HaloExchangeOptions options) {
+    if (impl_->pending_halo.active) {
+        throw std::logic_error(
+            "dsDecompX: a split-phase halo exchange is already in flight");
+    }
     if (options.rebuild) invalidate_halo();
     const std::size_t owned = particles.owned_count();
     ConstParticleView input = particles.read_view(owned);
     input.count = owned;
-    validate_collective_field_schema(impl_->collective_comm,input);
+    {
+        const std::uint64_t schema_hash = field_schema_hash(input);
+        // A reused device plan (options.rebuild == false) is only taken when
+        // every rank refreshes it together, so a schema that was already agreed
+        // on needs no new collective on those calls. Host views always check.
+        const bool skip_validation =
+            input.memory_space != MemorySpace::Host && !options.rebuild &&
+            impl_->schema_validated && impl_->validated_schema_hash == schema_hash;
+        if (!skip_validation) {
+            validate_collective_field_schema(impl_->collective_comm, schema_hash);
+            impl_->schema_validated = true;
+            impl_->validated_schema_hash = schema_hash;
+        }
+    }
 
     std::vector<int> previous_ghost_ids;
     if (input.memory_space == MemorySpace::Host && particles.ghost_count() &&
@@ -746,8 +891,29 @@ HaloResult Decomp::exchange_halo(ParticleInfo& particles,
                                   all.global_id + particles.size());
     }
 
-    auto handle = impl_->decomposition->begin_halo_exchange(input,
-                                                             options.stream);
+    auto& pending = impl_->pending_halo;
+    pending.handle = impl_->decomposition->begin_halo_exchange(input,
+                                                                options.stream);
+    pending.options = options;
+    pending.owned = owned;
+    pending.memory_space = input.memory_space;
+    pending.previous_ghost_ids = std::move(previous_ghost_ids);
+    pending.active = true;
+}
+
+HaloResult Decomp::end_halo_exchange(ParticleInfo& particles) {
+    auto& pending = impl_->pending_halo;
+    if (!pending.active) {
+        throw std::logic_error(
+            "dsDecompX: end_halo_exchange without a matching begin_halo_exchange");
+    }
+    pending.active = false;
+    HaloExchangeHandle handle = std::move(pending.handle);
+    const HaloExchangeOptions options = pending.options;
+    const std::size_t owned = pending.owned;
+    const MemorySpace input_space = pending.memory_space;
+    const std::vector<int> previous_ghost_ids = std::move(pending.previous_ghost_ids);
+
     impl_->decomposition->end_halo_exchange(handle, options.stream);
 
     const std::size_t ghosts =
@@ -756,7 +922,7 @@ HaloResult Decomp::exchange_halo(ParticleInfo& particles,
     StorageResizeResult output = particles.resize_storage(required, owned);
     require_output_capacity(output.view, required);
 
-    if (input.memory_space == MemorySpace::Host) {
+    if (input_space == MemorySpace::Host) {
         if (output.view.memory_space != MemorySpace::Host) {
             throw std::invalid_argument(
                 "dsDecompX: host halo input requires host output storage");
@@ -773,9 +939,14 @@ HaloResult Decomp::exchange_halo(ParticleInfo& particles,
                                                    options.stream);
     }
 
+    // A device halo that did not refresh an existing plan in place built a new
+    // one, whose ghost order may differ from the previous call's even when the
+    // count matches (the host path compares global IDs below instead).
     bool layout_changed = options.rebuild ||
-                          particles.ghost_count() != ghosts;
-    if (!layout_changed && input.memory_space == MemorySpace::Host) {
+                          particles.ghost_count() != ghosts ||
+                          (input_space != MemorySpace::Host && ghosts != 0 &&
+                           !impl_->decomposition->halo_plan_reused());
+    if (!layout_changed && input_space == MemorySpace::Host) {
         for (std::size_t i=0; i<ghosts; ++i) {
             if (previous_ghost_ids[i] != output.view.global_id[owned+i]) {
                 layout_changed = true;
@@ -784,7 +955,8 @@ HaloResult Decomp::exchange_halo(ParticleInfo& particles,
         }
     }
     particles.commit_counts(owned, ghosts);
-    return {ghosts, layout_changed, output.reallocated};
+    return {ghosts, layout_changed, output.reallocated,
+            impl_->decomposition->halo_plan_reused()};
 }
 
 MigrationResult Decomp::migrate(ParticleInfo& particles,
@@ -800,7 +972,8 @@ MigrationResult Decomp::migrate(ParticleInfo& particles,
     const std::size_t owned = particles.owned_count();
     ConstParticleView input = particles.read_view(owned);
     input.count = owned;
-    validate_collective_field_schema(impl_->collective_comm,input);
+    validate_collective_field_schema(impl_->collective_comm,
+                                     field_schema_hash(input));
     MigrationResult result = impl_->decomposition->migrate_particles(input,
                                                                       stream);
     StorageResizeResult output =

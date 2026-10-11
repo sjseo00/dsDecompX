@@ -160,10 +160,21 @@ int Decomposition::rank_at(const Vec3i& coordinates) const {
 
 void Decomposition::invalidate_halo_plan() noexcept {
     impl_->halo_plan_valid = false;
+#if HAS_CUDA
+    impl_->device_halo_plan_valid = false;
+#endif
 }
 
 bool Decomposition::halo_plan_valid() const noexcept {
     return impl_->halo_plan_valid;
+}
+
+bool Decomposition::halo_plan_reused() const noexcept {
+#if HAS_CUDA
+    return impl_->device_halo_plan_reused;
+#else
+    return false;
+#endif
 }
 
 std::size_t Decomposition::total_received_halo_particles() const noexcept {

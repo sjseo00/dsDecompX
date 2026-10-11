@@ -33,8 +33,12 @@ void Decomposition::unpack_migrated_device_particles(
     const DeviceParticleBuffer source=impl_->device_migration_result;
     if (destination.count<source.count) throw std::invalid_argument(
         "dsDecompX: migration output capacity is too small");
-    cuda::launch_unpack_records(source.data,source.count,destination,0,
-                                static_cast<cudaStream_t>(stream));
+    // Custom fields are matched by name against the destination view.
+    const cuda::WireFields wire=detail::bind_destination_fields(
+        impl_->device_migration_layout,destination,source.count);
+    cuda::launch_unpack_records(
+        reinterpret_cast<const unsigned char*>(source.data),source.count,
+        destination,0,wire,static_cast<cudaStream_t>(stream));
     impl_->cuda_execution->unpack_ready.record(static_cast<cudaStream_t>(stream));
     impl_->cuda_execution->reuse_event_recorded=true;
 #else
@@ -143,10 +147,6 @@ MigrationResult Decomposition::migrate_particles(
     if (owned_particles.memory_space != MemorySpace::Host) {
 #if HAS_CUDA
         impl_->migrated_owned.clear();
-        if (owned_particles.field_count!=0) {
-            throw std::runtime_error(
-                "dsDecompX: custom fields currently require host particle memory");
-        }
         if (!stream) throw std::invalid_argument(
             "dsDecompX CUDA migration requires an explicit communication stream");
         if (!impl_->backend->supports_device_data_plane()) throw std::runtime_error(
@@ -163,6 +163,13 @@ MigrationResult Decomposition::migrate_particles(
             impl_->cuda_execution=std::make_unique<cuda::ExecutionState>();
         cuda::ExecutionState& state=*impl_->cuda_execution;
         const cudaStream_t cuda_stream=static_cast<cudaStream_t>(stream);
+        // Custom fields travel behind the fixed record, so a wire record is
+        // `record_bytes` long (sizeof(ParticleRecord) without fields).
+        impl_->device_migration_layout=
+            detail::make_device_wire_layout(owned_particles);
+        const std::size_t record_bytes=impl_->device_migration_layout.stride;
+        const cuda::WireFields wire=detail::bind_source_fields(
+            impl_->device_migration_layout,owned_particles);
         const std::size_t particle_count=owned_particles.count;
         const std::size_t rank_count=static_cast<std::size_t>(impl_->topology.size());
         const int local_rank=impl_->topology.rank();
@@ -175,7 +182,7 @@ MigrationResult Decomposition::migrate_particles(
             particle_count*sizeof(unsigned int)>state.migration_sorted_indices.capacity() ||
             rank_count*sizeof(unsigned int)>state.device_counts.capacity() ||
             rank_count*sizeof(unsigned int)>state.device_offsets.capacity() ||
-            std::max<std::size_t>(1,particle_count)*sizeof(ParticleRecord)>
+            std::max<std::size_t>(1,particle_count)*record_bytes>
                 state.device_send.capacity() ||
             temporary_bytes>state.scan_temporary.capacity();
         if (state.reuse_event_recorded) {
@@ -189,7 +196,7 @@ MigrationResult Decomposition::migrate_particles(
         state.device_counts.resize(rank_count*sizeof(unsigned int));
         state.device_offsets.resize(rank_count*sizeof(unsigned int));
         state.device_send.resize(std::max<std::size_t>(1,particle_count)*
-                                 sizeof(ParticleRecord));
+                                 record_bytes);
         state.host_counts.resize(rank_count*sizeof(unsigned int));
         state.scan_temporary.resize(temporary_bytes);
 
@@ -219,7 +226,7 @@ MigrationResult Decomposition::migrate_particles(
             static_cast<unsigned int*>(state.migration_sorted_indices.data()),
             static_cast<unsigned int*>(state.device_counts.data()),
             static_cast<unsigned int*>(state.device_offsets.data()),
-            static_cast<ParticleRecord*>(state.device_send.data()),rank_count,
+            static_cast<unsigned char*>(state.device_send.data()),wire,rank_count,
             state.scan_temporary.data(),state.scan_temporary.size(),cuda_stream);
         cuda::detail::check(cudaMemcpyAsync(
                                 state.host_counts.data(),state.device_counts.data(),
@@ -242,11 +249,16 @@ MigrationResult Decomposition::migrate_particles(
             receive_counts.begin(),receive_counts.end(),std::size_t{0});
 
         const bool symmetric=impl_->backend->kind()==BackendKind::Nvshmem;
-        ParticleRecord* receive_base=nullptr;
-        std::size_t symmetric_stride=0;
+        unsigned char* receive_base=nullptr;
+        std::size_t symmetric_stride=0;  // slot capacity in records
         if (symmetric) {
             symmetric_stride=impl_->backend->maximum_size(particle_count);
-            if (symmetric_stride>impl_->nvshmem_migration_slot_capacity) {
+            // Reallocate when a slot must hold more records or the record size
+            // changed (custom fields added or removed). Field schemas match on
+            // every rank, so the collective allocation happens everywhere.
+            if (symmetric_stride>impl_->nvshmem_migration_slot_capacity ||
+                (impl_->nvshmem_migration_slot_capacity &&
+                 record_bytes!=impl_->nvshmem_migration_record_bytes)) {
                 if (state.reuse_event_recorded && !initial_growth)
                     state.unpack_ready.synchronize_host();
                 if (impl_->nvshmem_migration_receive)
@@ -255,7 +267,8 @@ MigrationResult Decomposition::migrate_particles(
                     impl_->backend->free_symmetric(impl_->nvshmem_migration_signals);
                 impl_->nvshmem_migration_receive=
                     impl_->backend->allocate_symmetric_zeroed(
-                        rank_count*symmetric_stride,sizeof(ParticleRecord));
+                        rank_count*symmetric_stride,record_bytes);
+                impl_->nvshmem_migration_record_bytes=record_bytes;
                 impl_->nvshmem_migration_signals=static_cast<std::uint64_t*>(
                     impl_->backend->allocate_symmetric_zeroed(
                         rank_count,sizeof(std::uint64_t)));
@@ -264,42 +277,42 @@ MigrationResult Decomposition::migrate_particles(
                 if (impl_->perf_enabled) ++impl_->perf_stats.buffer_reallocations;
 #endif
             }
-            receive_base=static_cast<ParticleRecord*>(impl_->nvshmem_migration_receive);
+            receive_base=static_cast<unsigned char*>(impl_->nvshmem_migration_receive);
             ++impl_->nvshmem_migration_epoch;
         } else {
             const std::size_t receive_bytes=std::max<std::size_t>(1,receive_total)*
-                                            sizeof(ParticleRecord);
+                                            record_bytes;
             if (state.reuse_event_recorded && !initial_growth &&
                 receive_bytes>state.device_receive.capacity())
                 state.unpack_ready.synchronize_host();
             state.device_receive.resize(receive_bytes);
-            receive_base=static_cast<ParticleRecord*>(state.device_receive.data());
+            receive_base=static_cast<unsigned char*>(state.device_receive.data());
         }
 
         impl_->device_transfers.clear();
         std::vector<std::size_t> receive_offsets(rank_count,0);
         for (std::size_t rank=1;rank<rank_count;++rank)
             receive_offsets[rank]=receive_offsets[rank-1]+receive_counts[rank-1];
-        auto* packed=static_cast<ParticleRecord*>(state.device_send.data());
+        auto* packed=static_cast<unsigned char*>(state.device_send.data());
         for (std::size_t peer=0;peer<rank_count;++peer) {
             if (static_cast<int>(peer)==local_rank) continue;
             detail::DeviceTransfer transfer;
             transfer.peer_rank=static_cast<int>(peer);
-            transfer.send_buffer=packed+local_offsets[peer];
+            transfer.send_buffer=packed+local_offsets[peer]*record_bytes;
             transfer.send_bytes=static_cast<std::size_t>(local_counts[peer])*
-                                sizeof(ParticleRecord);
+                                record_bytes;
             transfer.receive_bytes=static_cast<std::size_t>(receive_counts[peer])*
-                                   sizeof(ParticleRecord);
+                                   record_bytes;
             transfer.send_tag=transfer.receive_tag=240;
             if (symmetric) {
-                transfer.receive_buffer=receive_base+peer*symmetric_stride;
+                transfer.receive_buffer=receive_base+peer*symmetric_stride*record_bytes;
                 transfer.remote_receive_buffer=receive_base+
-                    static_cast<std::size_t>(local_rank)*symmetric_stride;
+                    static_cast<std::size_t>(local_rank)*symmetric_stride*record_bytes;
                 transfer.local_signal=impl_->nvshmem_migration_signals+peer;
                 transfer.remote_signal=impl_->nvshmem_migration_signals+local_rank;
                 transfer.signal_value=impl_->nvshmem_migration_epoch;
             } else {
-                transfer.receive_buffer=receive_base+receive_offsets[peer];
+                transfer.receive_buffer=receive_base+receive_offsets[peer]*record_bytes;
             }
             impl_->device_transfers.push_back(transfer);
         }
@@ -310,31 +323,39 @@ MigrationResult Decomposition::migrate_particles(
 
         const std::size_t new_count=retained_count+receive_total;
         const std::size_t result_bytes=std::max<std::size_t>(1,new_count)*
-                                       sizeof(ParticleRecord);
+                                       record_bytes;
         if (state.reuse_event_recorded && !initial_growth &&
             result_bytes>state.migration_temporary.capacity())
             state.unpack_ready.synchronize_host();
         state.migration_temporary.resize(result_bytes);
-        auto* result_records=static_cast<ParticleRecord*>(state.migration_temporary.data());
+        auto* result_records=static_cast<unsigned char*>(state.migration_temporary.data());
         if (retained_count) cuda::detail::check(cudaMemcpyAsync(
-            result_records,packed+local_offsets[static_cast<std::size_t>(local_rank)],
-            retained_count*sizeof(ParticleRecord),cudaMemcpyDeviceToDevice,cuda_stream),
+            result_records,
+            packed+local_offsets[static_cast<std::size_t>(local_rank)]*record_bytes,
+            retained_count*record_bytes,cudaMemcpyDeviceToDevice,cuda_stream),
             "copy retained migration particles");
         std::size_t result_offset=retained_count;
         for (std::size_t peer=0;peer<rank_count;++peer) {
             if (!receive_counts[peer]) continue;
-            const ParticleRecord* source=symmetric
-                ? receive_base+peer*symmetric_stride
-                : receive_base+receive_offsets[peer];
+            const unsigned char* source=symmetric
+                ? receive_base+peer*symmetric_stride*record_bytes
+                : receive_base+receive_offsets[peer]*record_bytes;
             cuda::detail::check(cudaMemcpyAsync(
-                result_records+result_offset,source,
-                static_cast<std::size_t>(receive_counts[peer])*sizeof(ParticleRecord),
+                result_records+result_offset*record_bytes,source,
+                static_cast<std::size_t>(receive_counts[peer])*record_bytes,
                 cudaMemcpyDeviceToDevice,cuda_stream),"compact received migration particles");
             result_offset+=receive_counts[peer];
         }
         state.unpack_ready.record(cuda_stream);
         state.reuse_event_recorded=true;
-        impl_->device_migration_result={result_records,new_count};
+        impl_->device_migration_result={
+            reinterpret_cast<const ParticleRecord*>(result_records),new_count};
+        // Owned indices changed, so the last device halo's ghost records and
+        // source-index map no longer refer to valid particles.
+        impl_->device_halo_results.clear();
+        impl_->device_halo_send_counts.clear();
+        impl_->device_halo_receive_counts.clear();
+        impl_->device_halo_owned_count=0;
         invalidate_halo_plan();
 
         MigrationResult result;
@@ -347,13 +368,13 @@ MigrationResult Decomposition::migrate_particles(
 #if ENABLE_PERF_COUNTERS
         if (impl_->perf_enabled) {
             ++impl_->perf_stats.migration_calls;
-            impl_->perf_stats.bytes_sent+=result.sent_count*sizeof(ParticleRecord);
-            impl_->perf_stats.bytes_received+=result.received_count*sizeof(ParticleRecord);
+            impl_->perf_stats.bytes_sent+=result.sent_count*record_bytes;
+            impl_->perf_stats.bytes_received+=result.received_count*record_bytes;
             std::uint64_t capacity=state.device_send.capacity()+
                                    state.device_receive.capacity()+
                                    state.migration_temporary.capacity();
             if (symmetric) capacity+=rank_count*
-                impl_->nvshmem_migration_slot_capacity*sizeof(ParticleRecord)+
+                impl_->nvshmem_migration_slot_capacity*record_bytes+
                 rank_count*sizeof(std::uint64_t);
             impl_->perf_stats.peak_communication_buffer_capacity=std::max(
                 impl_->perf_stats.peak_communication_buffer_capacity,capacity);

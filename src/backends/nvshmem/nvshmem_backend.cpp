@@ -18,6 +18,15 @@
 namespace dsdecompx::detail {
 namespace {
 
+// NVSHMEM has no nvshmem_initialized(); the documented query is
+// nvshmemx_init_status(). A merely bootstrapped library is not yet usable.
+bool nvshmem_is_initialized() {
+    const int status = nvshmemx_init_status();
+    return status == NVSHMEM_STATUS_IS_INITIALIZED ||
+           status == NVSHMEM_STATUS_LIMITED_MPG ||
+           status == NVSHMEM_STATUS_FULL_MPG;
+}
+
 int opposite_slot(const Neighbor& neighbor) {
     const int dx=-neighbor.direction[0], dy=-neighbor.direction[1], dz=-neighbor.direction[2];
     const int raw=(dx+1)*9+(dy+1)*3+(dz+1);
@@ -39,7 +48,7 @@ public:
         mpi_check(MPI_Comm_rank(control_, &bootstrap_rank_), "MPI_Comm_rank");
         mpi_check(MPI_Comm_size(control_, &size_), "MPI_Comm_size");
 
-        if (!nvshmem_initialized()) {
+        if (!nvshmem_is_initialized()) {
             nvshmemx_init_attr_t attributes{};
             attributes.mpi_comm = &control_;
             nvshmem_check(
@@ -76,7 +85,7 @@ private:
         if (completion_) cudaEventDestroy(completion_);
         completion_=nullptr;
         if (cart_ != MPI_COMM_NULL) MPI_Comm_free(&cart_);
-        if (owns_nvshmem_ && nvshmem_initialized()) nvshmem_finalize();
+        if (owns_nvshmem_ && nvshmem_is_initialized()) nvshmem_finalize();
         owns_nvshmem_=false;
         if (control_ != MPI_COMM_NULL) MPI_Comm_free(&control_);
         control_=MPI_COMM_NULL;

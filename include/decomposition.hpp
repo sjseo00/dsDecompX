@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <memory>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace dsdecompx {
@@ -36,6 +37,11 @@ struct HaloExchangeTimings {
     double total_seconds = 0.0;
 };
 
+// Records received on the device. Without custom fields they are a plain
+// ParticleRecord array. With custom fields each record is followed by the
+// field bytes, so consecutive records are further apart than
+// sizeof(ParticleRecord); use unpack_device_halos() / the migration unpack to
+// consume them rather than indexing the array directly.
 struct DeviceHaloBuffer {
     int peer_rank = -1;
     const ParticleRecord* data = nullptr;
@@ -96,6 +102,14 @@ public:
 
     void invalidate_halo_plan() noexcept;
     bool halo_plan_valid() const noexcept;
+    // True when the last CUDA halo exchange refreshed the existing plan in
+    // place, i.e. ghost membership and slot order are unchanged. Always false
+    // for host particle memory (the host path reports changes via global IDs).
+    bool halo_plan_reused() const noexcept;
+    // True when a non-rebuild device exchange of this view would refresh the
+    // existing plan in place (same ghost list, no count exchange). Identical on
+    // every rank as long as the ranks make the same collective calls.
+    bool can_refresh_halo_plan(const ConstParticleView& owned_particles) const;
 
     void rebuild_halo_plan(const ConstParticleView& owned_particles);
     void refresh_halo_buffers(const ConstParticleView& owned_particles);
@@ -152,6 +166,19 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
+
+#if HAS_CUDA
+    // Shared device reverse path: sends `record_bytes`-sized records for every
+    // received ghost back to the rank that owns it and hands the returned
+    // records to `reduce` together with the owning particle indices.
+    void reverse_device_records(
+        std::size_t owned_count, ExecutionStream stream, std::size_t record_bytes,
+        int buffer_set,
+        const std::function<void(std::size_t, std::size_t, unsigned char*)>& pack,
+        const std::function<void(const unsigned char*, std::size_t,
+                                 const unsigned int*)>& reduce,
+        const char* operation);
+#endif
 };
 
 } // namespace dsdecompx

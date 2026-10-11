@@ -8,12 +8,22 @@
 
 namespace dsdecompx {
 
+// Values for AdvancedBackendConfig::cuda_device besides an explicit ordinal.
+// kCudaDeviceCurrent keeps whatever device the caller already selected with
+// cudaSetDevice; kCudaDeviceByLocalRank gives each rank on a node its own GPU
+// (node-local rank modulo the visible device count).
+constexpr int kCudaDeviceCurrent = -1;
+constexpr int kCudaDeviceByLocalRank = -2;
+
 // Expert-only backend controls. Normal applications only select
 // Config::execution and leave these automatic defaults unchanged.
 struct AdvancedBackendConfig {
     BackendSelection selection = BackendSelection::Auto;
     bool read_environment = true;
     bool allow_host_staging = true;
+    // GPU used by this rank in ExecutionMode::Cuda: an ordinal, or one of the
+    // constants above. Applied before the NCCL/NVSHMEM backends initialize.
+    int cuda_device = kCudaDeviceCurrent;
 };
 
 struct DynamicLoadBalanceConfig {

@@ -170,6 +170,9 @@ void Decomposition::Impl::refresh_domain_geometry() {
     halo_send_buffers.resize(neighbors.size());
     halo_receive_buffers.resize(neighbors.size());
     halo_plan_valid = false;
+#if HAS_CUDA
+    device_halo_plan_valid = false;
+#endif
 }
 
 } // namespace dsdecompx

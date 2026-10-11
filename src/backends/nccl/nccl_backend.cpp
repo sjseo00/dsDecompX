@@ -167,6 +167,10 @@ public:
     bool supports_device_data_plane() const noexcept override { return true; }
 
     void begin_device_exchange(const DeviceExchange& exchange) override {
+        if (!nccl_) {
+            fail(exchange.operation,
+                 "communicator was aborted by an earlier failure; backend is unusable");
+        }
         if (operation_active_) {
             fail(exchange.operation, "another operation is already active");
         }

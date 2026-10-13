@@ -177,6 +177,10 @@ public:
 
     const Topology& topology() const noexcept;
     BackendKind backend_kind() const noexcept;
+    // True when the MPI backend is in use and the MPI library accepts device pointers, so device
+    // buffers go to MPI_Isend/MPI_Irecv directly. False for the NCCL and NVSHMEM backends, which
+    // say nothing about the MPI library.
+    bool mpi_takes_device_pointers() const noexcept;
     int owner_rank(const Vec3d& position) const;
     bool any_rank_true(bool local_flag) const;
     bool has_out_of_domain_particles(const ParticleInfo& particles) const;

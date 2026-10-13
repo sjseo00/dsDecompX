@@ -809,6 +809,11 @@ BackendKind Decomp::backend_kind() const noexcept {
     return impl_->decomposition->backend_kind();
 }
 
+bool Decomp::mpi_takes_device_pointers() const noexcept {
+    return impl_->decomposition->backend_kind() == BackendKind::Mpi &&
+           impl_->decomposition->cuda_aware_mpi_enabled();
+}
+
 int Decomp::owner_rank(const Vec3d& position) const {
     return impl_->decomposition->owner_rank(position);
 }

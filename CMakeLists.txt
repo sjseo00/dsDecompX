@@ -192,8 +192,6 @@ install(FILES
 
 install(FILES LICENSE README.md README.ko.md CHANGELOG.md CONTRIBUTING.md VERSION
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/doc/dsDecompX)
-install(DIRECTORY docs/
-    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/doc/dsDecompX/docs)
 
 write_basic_package_version_file(
     ${CMAKE_CURRENT_BINARY_DIR}/dsDecompXConfigVersion.cmake

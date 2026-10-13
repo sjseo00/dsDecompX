@@ -13,6 +13,12 @@
 #include <utility>
 #include <unordered_map>
 #include <vector>
+#if defined(__has_include)
+#if __has_include(<mpi-ext.h>)
+// Open MPI (and HPC-X): MPIX_CUDA_AWARE_SUPPORT and MPIX_Query_cuda_support().
+#include <mpi-ext.h>
+#endif
+#endif
 #if HAS_CUDA
 #include <cuda_runtime_api.h>
 #endif
@@ -769,8 +775,9 @@ private:
             if (value=="1" || value=="true" || value=="TRUE") return true;
             if (value=="0" || value=="false" || value=="FALSE") return false;
         }
-#ifdef MPIX_CUDA_AWARE_SUPPORT
-        if (MPIX_CUDA_AWARE_SUPPORT) return true;
+#if defined(MPIX_CUDA_AWARE_SUPPORT) && MPIX_CUDA_AWARE_SUPPORT
+        // Open MPI built with CUDA support: ask the library itself.
+        if (MPIX_Query_cuda_support() == 1) return true;
 #endif
         const char* value = std::getenv("OMPI_MCA_opal_cuda_support");
         return value && (std::string(value) == "true" || std::string(value) == "1");

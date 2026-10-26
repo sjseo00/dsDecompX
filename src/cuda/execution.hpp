@@ -27,6 +27,9 @@ public:
     // records returned by received_device_halos() stay valid across a reverse.
     DeviceBuffer reverse_send;
     DeviceBuffer reverse_receive;
+    // Forward field payloads (Decomposition::forward_exchange).
+    DeviceBuffer field_send;
+    DeviceBuffer field_receive;
     // Owned-particle index of every forward halo record, laid out like the
     // packed send buffer (neighbor blocks back to back).
     DeviceBuffer halo_source_indices;

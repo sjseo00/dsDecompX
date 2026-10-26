@@ -10,6 +10,7 @@ std::uint64_t ExecutionState::reallocations() const noexcept {
     return device_send.reallocations()+device_receive.reallocations()+
         device_counts.reallocations()+device_offsets.reallocations()+
         reverse_send.reallocations()+reverse_receive.reallocations()+
+        field_send.reallocations()+field_receive.reallocations()+
         halo_source_indices.reallocations()+halo_masks.reallocations()+
         halo_block_offsets.reallocations()+scan_temporary.reallocations()+
         migration_destinations.reallocations()+
@@ -23,6 +24,7 @@ std::size_t ExecutionState::communication_capacity() const noexcept {
     return device_send.capacity()+device_receive.capacity()+
         device_counts.capacity()+device_offsets.capacity()+
         reverse_send.capacity()+reverse_receive.capacity()+
+        field_send.capacity()+field_receive.capacity()+
         halo_source_indices.capacity()+halo_masks.capacity()+
         halo_block_offsets.capacity()+scan_temporary.capacity()+
         migration_destinations.capacity()+migration_sorted_destinations.capacity()+

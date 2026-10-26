@@ -136,6 +136,13 @@ public:
         ParticleView particles, std::size_t owned_count,
         const std::vector<ReverseExchangeField>& fields,
         ExecutionStream stream = nullptr);
+    // The inverse of reverse_exchange for application fields: copies the named fields of the owned particles into the ghost
+    // slots that hold their copies, along the halo plan of the last device halo exchange (the ghost slots keep their meaning
+    // between plan rebuilds). CUDA particle memory only; MPI, NCCL and NVSHMEM backends.
+    void forward_exchange(
+        ParticleView particles, std::size_t owned_count,
+        const std::vector<std::string>& field_names,
+        ExecutionStream stream = nullptr);
 
     MigrationResult migrate_particles(const ConstParticleView& owned_particles,
                                       ExecutionStream stream = nullptr);
@@ -184,6 +191,14 @@ private:
         const std::function<void(std::size_t, std::size_t, unsigned char*)>& pack,
         const std::function<void(const unsigned char*, std::size_t,
                                  const unsigned int*)>& reduce,
+        const char* operation);
+    // Device forward path: sends `record_bytes`-sized records of the owned particles that are ghosts of a neighbor to that
+    // neighbor (`pack` gets the owned indices of one neighbor's block) and hands the records received from each neighbor to
+    // `unpack` together with the first ghost slot they belong to.
+    void forward_device_fields(
+        std::size_t owned_count, ExecutionStream stream, std::size_t record_bytes,
+        const std::function<void(const unsigned int*, std::size_t, unsigned char*)>& pack,
+        const std::function<void(const unsigned char*, std::size_t, std::size_t)>& unpack,
         const char* operation);
 #endif
 };

@@ -24,6 +24,7 @@ constexpr int kReverseCountTagBase = 52;
 constexpr int kReverseDataTagBase = 78;
 constexpr int kDeviceCountTagBase = 104;
 constexpr int kDeviceDataTagBase = 136;
+constexpr int kFieldDataTagBase = 162;
 
 #if HAS_CUDA
 int opposite_direction_slot(const Neighbor& neighbor) {
@@ -1074,7 +1075,210 @@ void Decomposition::reverse_device_records(
     state.unpack_ready.record(cuda_stream);
     state.reuse_event_recorded=true;
 }
+
+void Decomposition::forward_device_fields(
+    std::size_t owned_count, ExecutionStream stream, std::size_t record_bytes,
+    const std::function<void(const unsigned int*,std::size_t,unsigned char*)>& pack,
+    const std::function<void(const unsigned char*,std::size_t,std::size_t)>& unpack,
+    const char* operation) {
+    const auto& neighbors=impl_->topology.neighbors();
+    // No device halo (single rank, or invalidated by a migration): no ghost holds a copy.
+    if (impl_->device_halo_send_counts.size()!=neighbors.size() ||
+        impl_->device_halo_receive_counts.size()!=neighbors.size()) {
+        return;
+    }
+    if (owned_count!=impl_->device_halo_owned_count) {
+        throw std::invalid_argument(
+            "dsDecompX: forward exchange owned count differs from the last device halo");
+    }
+    auto& state=*impl_->cuda_execution;
+    const bool symmetric=impl_->backend->kind()==BackendKind::Nvshmem;
+    const std::size_t send_total=std::accumulate(
+        impl_->device_halo_send_counts.begin(),
+        impl_->device_halo_send_counts.end(),std::size_t{0});
+    const std::size_t receive_total=std::accumulate(
+        impl_->device_halo_receive_counts.begin(),
+        impl_->device_halo_receive_counts.end(),std::size_t{0});
+    const cudaStream_t cuda_stream=static_cast<cudaStream_t>(stream);
+    // Own payload buffers (the forward halo records and the reverse payloads stay intact); wait for the previous consumer.
+    if (state.reuse_event_recorded) state.unpack_ready.wait(cuda_stream);
+    state.field_send.resize(std::max<std::size_t>(1,send_total)*record_bytes);
+    auto* send_base=static_cast<unsigned char*>(state.field_send.data());
+
+    // Where the records of each neighbor land. MPI/NCCL: one contiguous buffer, neighbor by neighbor. NVSHMEM: one fixed
+    // symmetric slot per direction (like the reverse exchange; a message is never larger than the forward halo's, which
+    // sized the slots), written one-sidedly by the neighbor and announced by a signal.
+    std::vector<unsigned char*> receive_pointers(neighbors.size(),nullptr);
+    std::size_t symmetric_stride=0;
+    Impl::SymmetricReverseBuffers* symmetric_buffers=nullptr;
+    if (symmetric) {
+        symmetric_buffers=&impl_->nvshmem_reverse[2];
+        symmetric_stride=impl_->nvshmem_halo_slot_capacity;
+        // The forward capacity and the record layout are identical on every rank, so all ranks take this collective
+        // (re)allocation together.
+        if (symmetric_stride &&
+            (symmetric_stride!=symmetric_buffers->slot_capacity ||
+             record_bytes!=symmetric_buffers->record_bytes)) {
+            if (state.reuse_event_recorded) state.unpack_ready.synchronize_host();
+            if (symmetric_buffers->receive)
+                impl_->backend->free_symmetric(symmetric_buffers->receive);
+            if (symmetric_buffers->signals)
+                impl_->backend->free_symmetric(symmetric_buffers->signals);
+            symmetric_buffers->receive=impl_->backend->allocate_symmetric_zeroed(
+                26*symmetric_stride,record_bytes);
+            symmetric_buffers->signals=static_cast<std::uint64_t*>(
+                impl_->backend->allocate_symmetric_zeroed(26,sizeof(std::uint64_t)));
+            symmetric_buffers->slot_capacity=symmetric_stride;
+            symmetric_buffers->record_bytes=record_bytes;
+#if ENABLE_PERF_COUNTERS
+            if (impl_->perf_enabled) ++impl_->perf_stats.buffer_reallocations;
 #endif
+        }
+        ++symmetric_buffers->epoch;
+        auto* symmetric_base=static_cast<unsigned char*>(symmetric_buffers->receive);
+        for (std::size_t n=0;n<neighbors.size();++n)
+            receive_pointers[n]=symmetric_base+
+                static_cast<std::size_t>(neighbors[n].direction_slot)*
+                symmetric_stride*record_bytes;
+    } else {
+        state.field_receive.resize(std::max<std::size_t>(1,receive_total)*record_bytes);
+        auto* receive_base=static_cast<unsigned char*>(state.field_receive.data());
+        std::size_t running=0;
+        for (std::size_t n=0;n<neighbors.size();++n) {
+            receive_pointers[n]=receive_base+running*record_bytes;
+            running+=impl_->device_halo_receive_counts[n];
+        }
+    }
+    // Block n of the source indices lists, in pack order, the owned particles this rank sent to neighbor n as ghosts.
+    const auto* source_indices=static_cast<const unsigned int*>(
+        state.halo_source_indices.data());
+
+    impl_->device_transfers.clear();
+    impl_->device_transfers.reserve(neighbors.size());
+    std::size_t send_offset=0;
+    for (std::size_t n=0;n<neighbors.size();++n) {
+        const std::size_t send_count=impl_->device_halo_send_counts[n];
+        const std::size_t receive_count=impl_->device_halo_receive_counts[n];
+        pack(source_indices+send_offset,send_count,send_base+send_offset*record_bytes);
+        detail::DeviceTransfer transfer;
+        transfer.peer_rank=neighbors[n].rank;
+        transfer.send_buffer=send_base+send_offset*record_bytes;
+        transfer.send_bytes=send_count*record_bytes;
+        transfer.receive_buffer=receive_pointers[n];
+        transfer.receive_bytes=receive_count*record_bytes;
+        transfer.send_tag=kFieldDataTagBase+neighbors[n].direction_slot;
+        transfer.receive_tag=kFieldDataTagBase+opposite_direction_slot(neighbors[n]);
+        if (symmetric) {
+            const std::size_t local_slot=static_cast<std::size_t>(neighbors[n].direction_slot);
+            const std::size_t remote_slot=static_cast<std::size_t>(opposite_direction_slot(neighbors[n]));
+            auto* symmetric_base=static_cast<unsigned char*>(symmetric_buffers->receive);
+            transfer.remote_receive_buffer=symmetric_base+
+                remote_slot*symmetric_stride*record_bytes;
+            transfer.local_signal=symmetric_buffers->signals+local_slot;
+            transfer.remote_signal=symmetric_buffers->signals+remote_slot;
+            transfer.signal_value=symmetric_buffers->epoch;
+        }
+        impl_->device_transfers.push_back(transfer);
+        send_offset+=send_count;
+    }
+    // MPI reads the device buffers from the host and needs the packs finished; NCCL orders its sends on the stream.
+    if (impl_->backend->kind()==BackendKind::Mpi) {
+        state.pack_ready.record(cuda_stream);
+        state.pack_ready.synchronize_host();
+    }
+    detail::DeviceExchange exchange{
+        &impl_->device_transfers,stream,stream,operation};
+    impl_->backend->begin_device_exchange(exchange);
+    impl_->backend->end_device_exchange(exchange);
+    // Ghost slots are laid out neighbor by neighbor, in the order of the receive counts.
+    std::size_t ghost_offset=owned_count;
+    for (std::size_t n=0;n<neighbors.size();++n) {
+        const std::size_t receive_count=impl_->device_halo_receive_counts[n];
+        unpack(receive_pointers[n],receive_count,ghost_offset);
+        ghost_offset+=receive_count;
+    }
+    state.unpack_ready.record(cuda_stream);
+    state.reuse_event_recorded=true;
+}
+#endif
+
+void Decomposition::forward_exchange(
+    ParticleView particles, std::size_t owned_count,
+    const std::vector<std::string>& field_names, ExecutionStream stream) {
+    if (impl_->operation_active) {
+        throw std::logic_error(
+            "dsDecompX: forward exchange cannot overlap an active operation");
+    }
+    if (particles.memory_space!=MemorySpace::CudaDevice &&
+        particles.memory_space!=MemorySpace::CudaManaged) {
+        throw std::invalid_argument(
+            "dsDecompX: forward field exchange needs CUDA particle memory");
+    }
+#if HAS_CUDA
+    if (!stream) {
+        throw std::invalid_argument(
+            "dsDecompX: device forward exchange requires an explicit stream");
+    }
+    const std::size_t ghost_count=total_received_halo_particles();
+    if (particles.count<owned_count+ghost_count) {
+        throw std::invalid_argument(
+            "dsDecompX: forward exchange particle view is too small");
+    }
+    if (field_names.size()>cuda::kMaxDeviceFields) {
+        throw std::invalid_argument(
+            "dsDecompX: at most "+std::to_string(cuda::kMaxDeviceFields)+
+            " fields can be forward-exchanged on CUDA particle memory");
+    }
+    cuda::ReverseFields fields;
+    std::unordered_set<std::string> selected_names;
+    std::size_t offset=0;
+    for (const auto& name : field_names) {
+        if (!selected_names.insert(name).second) {
+            throw std::invalid_argument(
+                "dsDecompX: duplicate forward exchange field '"+name+"'");
+        }
+        const ParticleFieldView* begin=particles.fields;
+        const ParticleFieldView* end=begin?begin+particles.field_count:begin;
+        const auto found=std::find_if(
+            begin,end,
+            [&](const ParticleFieldView& field) { return field.name==name; });
+        if (found==end || !found->data || found->components==0 ||
+            found->capacity<owned_count+ghost_count) {
+            throw std::invalid_argument(
+                "dsDecompX: missing or undersized forward exchange field '"+name+"'");
+        }
+        // Each field aligned to its element size inside the record, as in reverse_exchange.
+        const std::size_t element=field_type_size(found->type);
+        if (found->record_bytes()%4!=0) {
+            throw std::invalid_argument(
+                "dsDecompX: forward exchange field '"+name+"' must be a multiple of 4 bytes per particle");
+        }
+        offset=(offset+element-1)/element*element;
+        const std::size_t slot=fields.count++;
+        fields.type[slot]=found->type;
+        fields.op[slot]=ReduceOp::Replace;
+        fields.components[slot]=found->components;
+        fields.offset[slot]=offset;
+        fields.data[slot]=found->data;
+        offset+=found->record_bytes();
+    }
+    if (fields.count==0) return;
+    fields.stride=(offset+7)/8*8;
+    const cudaStream_t cuda_stream=static_cast<cudaStream_t>(stream);
+    forward_device_fields(
+        owned_count,stream,fields.stride,
+        [&](const unsigned int* sources,std::size_t count,unsigned char* output) {
+            cuda::launch_gather_fields(fields,sources,count,output,cuda_stream);
+        },
+        [&](const unsigned char* records,std::size_t count,std::size_t ghost_offset) {
+            cuda::launch_scatter_fields(fields,records,count,ghost_offset,cuda_stream);
+        },
+        "forward-exchange");
+#else
+    (void)owned_count; (void)field_names; (void)stream;
+    throw std::runtime_error("dsDecompX: CUDA execution layer is not compiled");
+#endif
+}
 
 void Decomposition::reverse_halo(ParticleView particles,
                                  std::size_t owned_count,

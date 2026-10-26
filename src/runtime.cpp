@@ -1056,6 +1056,16 @@ void Decomp::reverse_exchange(
         storage.view,particles.owned_count(),fields,stream);
 }
 
+void Decomp::forward_exchange(ParticleInfo& particles,
+                              const std::vector<std::string>& fields,
+                              ExecutionStream stream) {
+    StorageResizeResult storage=
+        particles.resize_storage(particles.size(),particles.size());
+    require_output_capacity(storage.view,particles.size());
+    impl_->decomposition->forward_exchange(
+        storage.view,particles.owned_count(),fields,stream);
+}
+
 void Decomp::set_performance_counters_enabled(bool enabled,
                                               bool neighbor_detail) noexcept {
     impl_->decomposition->set_performance_counters_enabled(enabled,

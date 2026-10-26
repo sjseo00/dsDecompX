@@ -86,7 +86,8 @@ struct Decomposition::Impl {
     std::size_t nvshmem_halo_slot_capacity = 0;
     std::uint64_t nvshmem_halo_epoch = 0;
     // Symmetric receive buffers of the device reverse exchange. Set 0 carries
-    // forces (reverse_halo), set 1 the custom fields (reverse_exchange).
+    // forces (reverse_halo), set 1 the custom fields (reverse_exchange), set 2
+    // the custom fields of the forward exchange (forward_exchange).
     struct SymmetricReverseBuffers {
         void* receive = nullptr;
         std::uint64_t* signals = nullptr;
@@ -94,7 +95,7 @@ struct Decomposition::Impl {
         std::size_t record_bytes = 0;
         std::uint64_t epoch = 0;
     };
-    SymmetricReverseBuffers nvshmem_reverse[2];
+    SymmetricReverseBuffers nvshmem_reverse[3];
     bool device_operation_active = false;
     ExecutionStream device_communication_stream = nullptr;
     DeviceParticleBuffer device_migration_result;

@@ -1,5 +1,17 @@
 # 1. Overview
 
+## Contents
+
+- [What dsDecompX is](#what-dsdecompx-is)
+- [The picture](#the-picture)
+- [Vocabulary](#vocabulary)
+- [The three operations](#the-three-operations)
+- [One timestep](#one-timestep)
+- [What dsDecompX does and what your code does](#what-dsdecompx-does-and-what-your-code-does)
+- [Where it runs](#where-it-runs)
+- [Rules that apply from the start](#rules-that-apply-from-the-start)
+- [Limitations](#limitations)
+
 This page answers one question: **what does dsDecompX do for my code, and what stays my job?**
 Read it first if you have never used a domain-decomposition library. If you already know the
 vocabulary, go straight to [02_Installation.md](02_Installation.md).

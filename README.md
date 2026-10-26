@@ -1,6 +1,6 @@
 # dsDecompX 1.0
 
-dsDecompX is a domain-decomposition and particle-communication library for simulations in whichmultiple CPUs or GPUs divide the simulation space. It keeps the fields molecular dynamics needsand also supports application-defined per-particle fields, so the same calls serve DEM, SPH,particle-in-cell and Lagrangian particle-tracking codes. You include one header,`<dsdecompx.hpp>`.  
+dsDecompX is a domain-decomposition and particle-communication library for simulations in which multiple CPUs or GPUs divide the simulation space. It keeps the fields molecular dynamics needs and also supports application-defined per-particle fields, so the same calls serve DEM, SPH,particle-in-cell and Lagrangian particle-tracking codes. You include one header,`<dsdecompx.hpp>`.  
 
 
 ## What it does
@@ -8,10 +8,10 @@ dsDecompX is a domain-decomposition and particle-communication library for simul
 The simulation box is cut into a Cartesian grid, one subdomain per MPI rank (one GPU per rank onGPU runs). dsDecompX keeps each rank's particle data complete with three operations:
 
 - `migrate()` sends particles that left a rank's subdomain to the rank that now owns them.
-- `exchange_halo()` copies particles near a subdomain face to the neighboring ranks as ghosts, soforces across the face can be computed.
+- `exchange_halo()` copies particles near a subdomain face to the neighboring ranks as ghosts, so forces across the face can be computed.
 - `reverse_halo()` returns the forces computed on ghosts to the particles they are copies of.
 
-It also provides application-defined fields (`add_field()`, `reverse_exchange()`,`forward_exchange()`), dynamic load balancing, and a split-phase halo exchange for overlappingcommunication with computation. It does not compute forces or build neighbor lists; that stays inyour code.
+It also provides application-defined fields (`add_field()`, `reverse_exchange()`,`forward_exchange()`), dynamic load balancing, and a split-phase halo exchange for overlapping communication with computation. It does not compute forces or build neighbor lists; that stays in your code.
 
 ## Features
 

@@ -1,6 +1,6 @@
 # dsDecompX documentation
 
-dsDecompX is a domain-decomposition and particle-communication library for MPI and GPUsimulations. These pages describe the source tree in this repository: version 1.0.0 plus thechanges listed under "Unreleased" in [CHANGELOG.md](../CHANGELOG.md).
+dsDecompX is a domain-decomposition and particle-communication library for MPI and GPU simulations. These pages describe the source tree in this repository: version 1.0.0 plus the changes listed under "Unreleased" in [CHANGELOG.md](../CHANGELOG.md).
 
 ## Contents
 

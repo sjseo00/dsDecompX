@@ -1,5 +1,14 @@
 # 2. Installation
 
+## Contents
+
+- [Requirements](#requirements)
+- [Build and install (CPU)](#build-and-install-cpu)
+- [Build and install (CUDA)](#build-and-install-cuda)
+- [Check the installation](#check-the-installation)
+- [Use it from your own project](#use-it-from-your-own-project)
+- [Limitations](#limitations)
+
 This page answers one question: **how do I build dsDecompX, install it, and link it into my
 project?**
 

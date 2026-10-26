@@ -1,4 +1,4 @@
-# dsDecompX 0.3
+# dsDecompX 1.0
 
 [English](README.md) | 한국어
 
@@ -24,7 +24,7 @@ cmake --install build --prefix /desired/prefix
 ```
 
 ```cmake
-find_package(dsDecompX 0.3 REQUIRED CONFIG)
+find_package(dsDecompX 1.0 REQUIRED CONFIG)
 target_link_libraries(my_particles PRIVATE dsdecompx::dsdecompx)
 ```
 
@@ -55,13 +55,12 @@ CPU와 GPU는 같은 옵션을 지원합니다.
 
 ## 자세한 문서
 
-- [설치 및 빌드 옵션](docs/user-guide/installation.md)
-- [아키텍처](docs/architecture.md)
-- [API 레퍼런스](docs/api-reference.md) — `ParticleInfo`/`Decomp`/`Config` 전체 함수, 코드 예제, 현재 제한사항
-- [사용자 정의 field 안내](docs/user-guide/custom-fields.md)
-- [Backend 선택](docs/user-guide/backend-selection.md), [MPI](docs/user-guide/mpi.md), [CUDA](docs/user-guide/cuda.md), [NCCL](docs/user-guide/nccl.md), [NVSHMEM](docs/user-guide/nvshmem.md)
-- [성능 측정](docs/user-guide/performance.md)
-- [문제 해결](docs/user-guide/troubleshooting.md)
-- [Benchmark](examples/benchmark/README.md)
+- [시작하기](docs/00_Getting_Started.md) — 초보자용 단계별 안내서: 빌드하기, 뼈대 코드 작성, 옵션 채우기, 메인 루프 작성, 실행까지 순서대로 설명
+- [개요 및 아키텍처](docs/01_Overview_and_Architecture.md) — dsDecompX가 무엇을 하는지, 공간을 어떻게 나누는지, dsDecompX와 응용 프로그램의 역할 분담, 현재 제한사항
+- [설치 및 backend 선택](docs/02_Installation_and_Backend_Selection.md) — 빌드 옵션, Auto backend 선택 동작 방식, 문제 해결
+- [통신 backend](docs/03_Communication_Backends.md) — MPI/NCCL/NVSHMEM이 각각 입자 데이터를 옮기는 방식, CUDA stream/event 모델, 동기화 규칙, backend 추가 방법
+- [API 레퍼런스](docs/04_API_Reference.md) — `ParticleInfo`/`Decomp`/`Config` 전체 함수, 사용자 정의 field, 코드 예제, 현재 제한사항
+- [부하 분산 및 성능](docs/05_Load_Balancing_and_Performance.md) — 동적/수동 재분배와 성능 측정
+- [MD 통합 안내](docs/06_MD_Integration_Guide.md) — 통합 패턴과 DeepScaleMD 실제 적용 사례
 
 GPL-3.0-only; [LICENSE](LICENSE)를 참고하십시오.

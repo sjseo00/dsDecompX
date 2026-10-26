@@ -173,7 +173,52 @@ __global__ void reduce_reverse_fields_kernel(DeviceReverseFields fields,
     }
 }
 
+// One block per record: the threads walk over the 4-byte words of every field, so a wide field (a node feature vector of
+// hundreds of values) is read and written coalesced.
+__global__ void gather_fields_kernel(DeviceReverseFields fields, const unsigned int* sources,
+                                     std::size_t count, unsigned char* output) {
+    const std::size_t k = blockIdx.x;
+    if (k >= count) return;
+    const std::size_t owner = sources[k];
+    unsigned char* record = output + k * fields.stride;
+    for (int f = 0; f < fields.count; ++f) {
+        const unsigned int* source =
+            static_cast<const unsigned int*>(fields.data[f]) + owner * fields.words[f];
+        unsigned int* target = reinterpret_cast<unsigned int*>(record + fields.offset[f]);
+        for (unsigned int w = threadIdx.x; w < fields.words[f]; w += blockDim.x) target[w] = source[w];
+    }
+}
+
+__global__ void scatter_fields_kernel(DeviceReverseFields fields, const unsigned char* records,
+                                      std::size_t count, std::size_t ghost_offset) {
+    const std::size_t k = blockIdx.x;
+    if (k >= count) return;
+    const std::size_t ghost = ghost_offset + k;
+    const unsigned char* record = records + k * fields.stride;
+    for (int f = 0; f < fields.count; ++f) {
+        const unsigned int* source = reinterpret_cast<const unsigned int*>(record + fields.offset[f]);
+        unsigned int* target = static_cast<unsigned int*>(fields.data[f]) + ghost * fields.words[f];
+        for (unsigned int w = threadIdx.x; w < fields.words[f]; w += blockDim.x) target[w] = source[w];
+    }
+}
+
 } // namespace
+
+void launch_gather_fields(const ReverseFields& fields, const unsigned int* sources,
+                          std::size_t count, unsigned char* output, cudaStream_t stream) {
+    if (!count || !fields.count) return;
+    gather_fields_kernel<<<static_cast<unsigned>(count), 128, 0, stream>>>(
+        to_device(fields), sources, count, output);
+    detail::check(cudaGetLastError(), "launch forward field gather kernel");
+}
+
+void launch_scatter_fields(const ReverseFields& fields, const unsigned char* records,
+                           std::size_t count, std::size_t ghost_offset, cudaStream_t stream) {
+    if (!count || !fields.count) return;
+    scatter_fields_kernel<<<static_cast<unsigned>(count), 128, 0, stream>>>(
+        to_device(fields), records, count, ghost_offset);
+    detail::check(cudaGetLastError(), "launch forward field scatter kernel");
+}
 
 void launch_pack_reverse_fields(const ReverseFields& fields,
                                 std::size_t ghost_offset, std::size_t count,

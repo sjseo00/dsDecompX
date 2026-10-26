@@ -1,15 +1,11 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(dsDecompX VERSION 0.3.0 LANGUAGES CXX)
+project(dsDecompX VERSION 1.0.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-option(BUILD_TESTS "Build dsDecompX tests" OFF)
-option(BUILD_EXAMPLES "Build dsDecompX examples" OFF)
-option(BUILD_BENCHMARKS "Build the dsDecompX benchmark" OFF)
-option(RUN_GPU_TESTS "Register GPU/MPI tests with CTest" OFF)
 option(ENABLE_PERF_COUNTERS "Compile performance counters" ON)
 option(ENABLE_CUDA "Build the CUDA execution layer" OFF)
 # NCCL / NVSHMEM are tri-state: ON (required, configure fails if missing), OFF
@@ -160,15 +156,6 @@ set_target_properties(dsdecompx PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
     EXPORT_NAME dsdecompx)
-
-if(BUILD_TESTS)
-    include(CTest)
-    add_subdirectory(tests)
-endif()
-
-if(BUILD_EXAMPLES OR BUILD_BENCHMARKS)
-    add_subdirectory(examples)
-endif()
 
 install(TARGETS dsdecompx
     EXPORT dsDecompXTargets

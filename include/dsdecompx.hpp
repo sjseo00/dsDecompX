@@ -220,6 +220,14 @@ public:
         ParticleInfo& particles,
         const std::vector<ReverseExchangeField>& fields,
         ExecutionStream stream = nullptr);
+    // The inverse of reverse_exchange() for application fields (registered with add_field()): copies the named fields of the
+    // owned particles into the ghost slots that hold their copies, along the halo plan of the last device halo exchange.
+    // Together with reverse_exchange(Sum) it forms the pair a differentiable per-layer exchange needs (forward: owner to
+    // ghost copy; backward: ghost values added to the owner). CUDA memory only; MPI, NCCL and NVSHMEM backends.
+    void forward_exchange(
+        ParticleInfo& particles,
+        const std::vector<std::string>& fields,
+        ExecutionStream stream = nullptr);
 
     void set_performance_counters_enabled(bool enabled,
                                           bool neighbor_detail = false) noexcept;

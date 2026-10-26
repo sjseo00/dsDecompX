@@ -63,6 +63,14 @@ void launch_reduce_reverse_fields(const ReverseFields& fields,
                                   const unsigned char* records, std::size_t count,
                                   const unsigned int* sources, cudaStream_t stream);
 
+// Forward field exchange, the inverse of the reverse exchange (the same record layout: `type` and `op` are not used).
+// launch_gather_fields copies the fields of the owned particles sources[0, count) into records; launch_scatter_fields copies
+// record k into the ghost slot ghost_offset + k.
+void launch_gather_fields(const ReverseFields& fields, const unsigned int* sources,
+                          std::size_t count, unsigned char* output, cudaStream_t stream);
+void launch_scatter_fields(const ReverseFields& fields, const unsigned char* records,
+                           std::size_t count, std::size_t ghost_offset, cudaStream_t stream);
+
 // Pass 1+2: classifies every owned particle against all active neighbors and
 // writes per-neighbor totals to `totals`. `masks` needs one uint per particle
 // and `block_counts` halo_block_count(n) * kMaxHaloNeighbors uints; the latter

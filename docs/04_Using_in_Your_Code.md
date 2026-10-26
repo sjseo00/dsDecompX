@@ -1,5 +1,19 @@
 # 4. Using dsDecompX in Your Code
 
+## Contents
+
+- [1. Program structure](#1-program-structure)
+- [2. Configure the decomposition](#2-configure-the-decomposition)
+- [3. Give it your particles](#3-give-it-your-particles)
+- [4. Owned and ghost slots](#4-owned-and-ghost-slots)
+- [5. The step loop](#5-the-step-loop)
+- [6. Application-defined fields](#6-application-defined-fields)
+- [7. Returning ghost data to owners](#7-returning-ghost-data-to-owners)
+- [8. Load balancing and box changes](#8-load-balancing-and-box-changes)
+- [9. Overlapping communication with computation](#9-overlapping-communication-with-computation)
+- [10. CUDA](#10-cuda)
+- [Limitations](#limitations)
+
 This page answers one question: **how do I connect my own particle data and my own time loop to
 dsDecompX, on CPU or GPU?** [03_First_Program.md](03_First_Program.md) shows the shortest working
 program; this page explains each decision in it. Function-by-function details are in

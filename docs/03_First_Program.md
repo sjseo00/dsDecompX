@@ -1,5 +1,11 @@
 # 3. First Program
 
+## Contents
+
+- [The program](#the-program)
+- [Build and run](#build-and-run)
+- [What each call did](#what-each-call-did)
+
 This page answers one question: **how do I get a small program that uses dsDecompX working?**
 You will write one file that scatters particles over the ranks, builds ghosts, computes a toy
 pair force with Newton's third law, returns the ghost forces to their owners, and checks that the

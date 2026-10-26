@@ -1,6 +1,14 @@
 # 6. Recipes
 
-This page answers one question: **what does my application's step look like for a given kind ofsimulation?** Each recipe lists what to register, the call sequence, and the points that arespecific to that method. The calls are described in[04_Using_in_Your_Code.md](04_Using_in_Your_Code.md) and [05_API_Reference.md](05_API_Reference.md).
+## Contents
+
+1. [Pairwise molecular dynamics](#1-pairwise-molecular-dynamics)
+2. [Per-layer feature exchange (GPU)](#2-per-layer-feature-exchange-gpu)
+3. [Discrete element method (DEM)](#3-discrete-element-method-dem)
+4. [Smoothed-particle hydrodynamics (SPH)](#4-smoothed-particle-hydrodynamics-sph)
+5. [Lagrangian particle tracking](#5-lagrangian-particle-tracking)
+
+This page answers one question: **what does my application's step look like for a given kind of simulation?** Each recipe lists what to register, the call sequence, and the points that are specific to that method. The calls are described in[04_Using_in_Your_Code.md](04_Using_in_Your_Code.md) and [05_API_Reference.md](05_API_Reference.md).
 
 
 | Recipe                                                                             | Use it for                                                                       |
@@ -16,7 +24,7 @@ Recipes 1 and 2 correspond to how DeepScaleMD uses the library; the other recipe
 
 ## 1. Pairwise molecular dynamics
 
-**Register.** Nothing beyond the built-in record: positions, velocities, forces, mass, charge,type and a unique `global_id`.
+**Register.** Nothing beyond the built-in record: positions, velocities, forces, mass, charge, type and a unique `global_id`.
 
 **Configure.**
 
@@ -44,17 +52,17 @@ integrate_and_thermostat(particles);             // owned slots only
 
 **Points specific to MD.**
 
-- **Rebuild together.** A neighbor list may index ghost slots until the next `rebuild = true`exchange: the same particles stay in the same ghost slots in between. Rebuild the list on exactlythe steps where you pass `rebuild = true` (or `migrate()`), and whenever `layout_changed` or`storage_reallocated` is set.
+- **Rebuild together.** A neighbor list may index ghost slots until the next `rebuild = true`exchange: the same particles stay in the same ghost slots in between. Rebuild the list on exactly the steps where you pass `rebuild = true` (or `migrate()`), and whenever `layout_changed` or`storage_reallocated` is set.
 - **Skin.** Choose `skin` so that no pair that starts outside `cutoff + skin` can come within`cutoff` before the next rebuild. A common choice is twice the largest displacement per rebuild interval.
-- **Counting each cross-face pair once.** Decide which rank computes a pair of an owned particleand a ghost (for example, the smaller `global_id`), then use `reverse_halo()`; or compute onboth ranks, update only the owned particle, and skip `reverse_halo()` (see[section 7 of 04](04_Using_in_Your_Code.md#7-returning-ghost-data-to-owners)).[03_First_Program.md](03_First_Program.md) is a runnable instance of the first design.
+- **Counting each cross-face pair once.** Decide which rank computes a pair of an owned particle and a ghost (for example, the smaller `global_id`), then use `reverse_halo()`; or compute on both ranks, update only the owned particle, and skip `reverse_halo()` (see[section 7 of 04](04_Using_in_Your_Code.md#7-returning-ghost-data-to-owners)).[03_First_Program.md](03_First_Program.md) is a runnable instance of the first design.
 - **Minimum image along undivided axes.** Ghosts are only created across divided axes (and neveron one rank). Apply the minimum-image convention for distances along an axis whose process-griddimension is 1, as in [03_First_Program.md](03_First_Program.md).
 - **Constant-pressure runs.** After you change the box and rescale positions:`decomp.update_domain(domain); decomp.set_halo_width(cutoff + skin); decomp.migrate(particles);`and rebuild the neighbor list.
-- **Uneven density.** `GridPolicy::Dynamic` moves the cut planes during `migrate()`. To balance on measuredtime instead of particle count, use `decomp.rebalance(particles, options)` with `options.local_work`set to the time of your force loop.
+- **Uneven density.** `GridPolicy::Dynamic` moves the cut planes during `migrate()`. To balance on measured time instead of particle count, use `decomp.rebalance(particles, options)` with `options.local_work`set to the time of your force loop.
 - **GPU.** Use the same sequence with GPU arrays and a stream, and on non-rebuild steps pass`positions_only = true` to cut the traffic per ghost from about 96 to 24 bytes (see the CUDA section of[04](04_Using_in_Your_Code.md#reusing-the-ghost-list)). DeepScaleMD's own use of these calls is in`src/md_system.cpp` (`migrate_particles_on_device`, `exchange_halo_on_device`,`reverse_halo_on_device`).
 
 ## 2. Per-layer feature exchange (GPU)
 
-A message-passing model computes node features layer by layer. Each layer needs the features ofthe neighbors, including those that are ghosts on this rank. The pair of calls below keeps ghostfeatures current in the forward pass and returns their gradients in the backward pass.
+A message-passing model computes node features layer by layer. Each layer needs the features ofthe neighbors, including those that are ghosts on this rank. The pair of calls below keeps ghost features current in the forward pass and returns their gradients in the backward pass.
 
 **Register.** One application field for the features, sized for `owned + ghosts` and`width` components per particle:
 
@@ -76,10 +84,10 @@ decomp.reverse_exchange(particles, {{"features_grad", dsdecompx::ReduceOp::Sum}}
 
 **Points specific to this recipe.**
 
-- Both calls follow the ghost list of the latest GPU `exchange_halo()`; do not `migrate()` betweenthem and the exchange that built the list.
+- Both calls follow the ghost list of the latest GPU `exchange_halo()`; do not `migrate()` between them and the exchange that built the list.
 - The two operations are adjoint to each other: `forward_exchange()` is the transpose of`reverse_exchange()` with `ReduceOp::Sum`. This is what a differentiable layer needs.
 - Limits: GPU memory only, a non-null stream, at most 16 fields per call, and each field'sper-particle size (`components x sizeof(type)`) must be a multiple of 4 bytes.
-- Because ghost features are refreshed from their owners between layers, the ghost layer only hasto be one interaction cutoff deep. Without the exchange, an `L`-layer model needs ghosts `L`cutoffs deep. The halo still reaches only adjacent subdomains, so keep the halo width no largerthan a subdomain.
+- Because ghost features are refreshed from their owners between layers, the ghost layer only hasto be one interaction cutoff deep. Without the exchange, an `L`-layer model needs ghosts `L`cutoffs deep. The halo still reaches only adjacent subdomains, so keep the halo width no larger than a subdomain.
 - DeepScaleMD's use of this pair is `MDSystem::exchange_field_on_device` in `src/md_system.cpp`(field name `mlip_features`).
 
 ## 3. Discrete element method (DEM)
@@ -106,10 +114,10 @@ integrate(particles);
 
 **Points specific to DEM.**
 
-- Set `halo.width` to at least the largest contact range: the largest sum of two radii plus theskin. With a wide radius range the largest grain dictates the halo width.
+- Set `halo.width` to at least the largest contact range: the largest sum of two radii plus the skin. With a wide radius range the largest grain dictates the halo width.
 - A contact between an owned and a ghost grain is visible on both ranks. Pick one rank to computeit (as in recipe 1) so force and torque are applied once.
 - Because custom fields are copied to ghosts, zero the ghost entries of `torque` before accumulating(section 7 of [04](04_Using_in_Your_Code.md#7-returning-ghost-data-to-owners)).
-- Contact history (for example, tangential springs) is per pair, not per particle. dsDecompX doesnot move per-pair data; keep it in your own structures, keyed by `global_id` pairs, and move it withyour particles after a `migrate()`.
+- Contact history (for example, tangential springs) is per pair, not per particle. dsDecompX does not move per-pair data; keep it in your own structures, keyed by `global_id` pairs, and move it with your particles after a `migrate()`.
 
 ## 4. Smoothed-particle hydrodynamics (SPH)
 
@@ -140,8 +148,8 @@ integrate(particles);
 
 **Points specific to SPH.**
 
-- Set `halo.width` to the kernel support radius (for example, `2 h` for a cubic spline) plusthe skin. With variable smoothing lengths, use the largest.
-- A second `exchange_halo()` on CPU memory resets ghost forces to zero and refreshes ghost positionsand application fields. If you have already accumulated ghost forces, do it before that pass,not between accumulation and `reverse_halo()`.
+- Set `halo.width` to the kernel support radius (for example, `2 h` for a cubic spline) plus the skin. With variable smoothing lengths, use the largest.
+- A second `exchange_halo()` on CPU memory resets ghost forces to zero and refreshes ghost positions and application fields. If you have already accumulated ghost forces, do it before that pass, not between accumulation and `reverse_halo()`.
 - Use `ReduceOp::Max` to share a quantity such as a signal speed for a time step limit, instead of `Sum`.
 
 ## 5. Lagrangian particle tracking
@@ -168,11 +176,7 @@ decomp.migrate(particles);
 
 **Points specific to tracking.**
 
-- `migrate()` sends particles directly to their owner, so a fast particle that crosses severalsubdomains in one step is handled; you do not need a halo for that.
-- On a periodic axis `migrate()` wraps positions back into the box. On a non-periodic axis a particlethat leaves the box is assigned to the nearest boundary rank; it is not deleted. Removesuch particles yourself.
-- dsDecompX moves particles, not grid data. Storing and interpolating the flow field near subdomainfaces is your code's job.
+- `migrate()` sends particles directly to their owner, so a fast particle that crosses several subdomains in one step is handled; you do not need a halo for that.
+- On a periodic axis `migrate()` wraps positions back into the box. On a non-periodic axis a particle that leaves the box is assigned to the nearest boundary rank; it is not deleted. Remove such particles yourself.
+- dsDecompX moves particles, not grid data. Storing and interpolating the flow field near subdomain faces is your code's job.
 - To keep ranks balanced as particles cluster, use `GridPolicy::Dynamic` or `rebalance()`.
-
-##   
-
- 

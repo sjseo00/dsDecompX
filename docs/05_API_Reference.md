@@ -1,5 +1,19 @@
 # 5. API Reference
 
+## Contents
+
+- [Conventions](#conventions)
+- [Config](#config)
+- [ParticleInfo](#particleinfo)
+- [Field and memory types](#field-and-memory-types)
+- [Decomp](#decomp)
+- [Topology](#topology)
+- [Process-grid functions](#process-grid-functions)
+- [Performance counters](#performance-counters)
+- [Version and build macros](#version-and-build-macros)
+- [Errors](#errors)
+- [Limitations](#limitations)
+
 This page answers one question: **what are the exact types, functions, arguments and defaults?**
 For how to use them together, see [04_Using_in_Your_Code.md](04_Using_in_Your_Code.md).
 

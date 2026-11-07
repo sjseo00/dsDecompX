@@ -291,8 +291,9 @@ and for a run on one rank, no ghosts are produced. The array storage grows when 
 | `storage_reallocated` | The particle storage had to grow, so array addresses may have changed. |
 | `plan_reused` | CUDA memory: the previous plan was refreshed in place. Identical on all ranks. |
 
-With a reused list on host memory, ghost positions and application fields are refreshed; the other
-ghost fields keep the values of the last rebuild.
+With a reused list on host memory, ghost positions, velocities and application fields are refreshed; the other
+ghost fields keep the values of the last rebuild. `DSDECOMPX_HOST_HALO_REFRESHES_VELOCITY` is defined in
+`dsdecompx.hpp` when the velocities are refreshed (it lets a client build against older releases).
 
 ### Split-phase exchange
 

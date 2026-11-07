@@ -2,6 +2,10 @@
 
 ## 1.0.0
 
+- A host-memory halo exchange on a reused plan (`exchange_halo(particles, {rebuild = false})`) now refreshes the ghosts' velocities
+  together with their positions; it used to leave them at the values of the last plan build. Defined as
+  `DSDECOMPX_HOST_HALO_REFRESHES_VELOCITY` in `dsdecompx.hpp` (DeepScaleMD's CPU constraint solver needs it).
+
 - Added `Decomp::forward_exchange()` (CUDA memory; MPI, NCCL and NVSHMEM backends): copies application fields registered with
   `add_field()` from the owned particles into the ghost slots that hold their copies, along the halo plan of the last device halo
   exchange. It is the adjoint of `reverse_exchange()` with `ReduceOp::Sum`, for differentiable per-layer exchange of node features

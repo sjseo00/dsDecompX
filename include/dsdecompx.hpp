@@ -39,6 +39,8 @@ struct HaloExchangeOptions {
 };
 // Defined when HaloExchangeOptions has positions_only (lets a client build against older releases).
 #define DSDECOMPX_HALO_POSITIONS_ONLY 1
+// Defined when a host-memory halo refresh (exchange_halo on a reused plan) also refreshes the ghosts' velocities.
+#define DSDECOMPX_HOST_HALO_REFRESHES_VELOCITY 1
 // Where the translation unit that includes this header found it (to diagnose mixed installs).
 inline const char* header_path() noexcept { return __FILE__; }
 

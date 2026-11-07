@@ -149,7 +149,7 @@ integrate(particles);
 **Points specific to SPH.**
 
 - Set `halo.width` to the kernel support radius (for example, `2 h` for a cubic spline) plus the skin. With variable smoothing lengths, use the largest.
-- A second `exchange_halo()` on CPU memory resets ghost forces to zero and refreshes ghost positions and application fields. If you have already accumulated ghost forces, do it before that pass, not between accumulation and `reverse_halo()`.
+- A second `exchange_halo()` on CPU memory resets ghost forces to zero and refreshes ghost positions, velocities and application fields. If you have already accumulated ghost forces, do it before that pass, not between accumulation and `reverse_halo()`.
 - Use `ReduceOp::Max` to share a quantity such as a signal speed for a time step limit, instead of `Sum`.
 
 ## 5. Lagrangian particle tracking

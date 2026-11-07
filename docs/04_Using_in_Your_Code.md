@@ -198,8 +198,8 @@ for (int step = 0; step < nsteps; ++step) {
 
 **Rebuild and reuse.** With `rebuild = false`, the previous halo plan is reused. The same particles
 are sent to the same neighbors and fill the same ghost slots, so a neighbor list that indexes ghost
-slots stays valid until the next rebuild. On CPU memory a reused exchange refreshes ghost positions
-and application fields; velocity, mass, charge, type and id keep the values from the last rebuild.
+slots stays valid until the next rebuild. On CPU memory a reused exchange refreshes ghost positions,
+velocities and application fields; mass, charge, type and id keep the values from the last rebuild.
 On CUDA memory a reused exchange refreshes the whole record, or only positions with
 `positions_only` (section 10). Ghost forces are zero after every exchange.
 

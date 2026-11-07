@@ -279,6 +279,11 @@ void Decomposition::refresh_halo_buffers(
             buffer[k].x = owned_particles.x[i] + shift[0];
             buffer[k].y = owned_particles.y[i] + shift[1];
             buffer[k].z = owned_particles.z[i] + shift[2];
+            // The velocities too (they used to stay at the values of the last plan build): a client that holds
+            // constraints across the subdomain faces needs the ghosts' CURRENT velocities (DSDECOMPX_HOST_HALO_REFRESHES_VELOCITY).
+            if (owned_particles.vx) buffer[k].vx = owned_particles.vx[i];
+            if (owned_particles.vy) buffer[k].vy = owned_particles.vy[i];
+            if (owned_particles.vz) buffer[k].vz = owned_particles.vz[i];
         }
     }
 }

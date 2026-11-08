@@ -1,21 +1,21 @@
 cmake_minimum_required(VERSION 3.18)
 project(dsdecompx_examples LANGUAGES CXX)
 
-# Small examples and the correctness checks of dsDecompX, built against an installed dsDecompX.
+# Small examples of dsDecompX and the programs that verify an installation, built against an installed dsDecompX.
 #
 #   cmake -S examples -B build -DCMAKE_PREFIX_PATH=<dsDecompX install>
 #   cmake --build build -j
 #   ctest --test-dir build --output-on-failure
 #
-# The CUDA checks need a CUDA build of dsDecompX and GPUs:
+# The CUDA verification needs a CUDA build of dsDecompX and GPUs:
 #   -DENABLE_CUDA=ON -DRUN_GPU_TESTS=ON   (add -DENABLE_NCCL=ON or -DENABLE_NVSHMEM=ON to test those transports)
 #
 # The folders applications/, communication_test/, and load_balancing/ are separate projects with their own CMakeLists.txt.
 
-option(ENABLE_CUDA "Build the CUDA checks (dsDecompX must be built with CUDA)" OFF)
-option(RUN_GPU_TESTS "Register the CUDA checks with CTest (needs GPUs)" OFF)
-option(ENABLE_NCCL "Also run the CUDA checks with the NCCL transport" OFF)
-option(ENABLE_NVSHMEM "Also run the CUDA checks with the NVSHMEM transport" OFF)
+option(ENABLE_CUDA "Build the CUDA verification programs (dsDecompX must be built with CUDA)" OFF)
+option(RUN_GPU_TESTS "Register the CUDA verification with CTest (needs GPUs)" OFF)
+option(ENABLE_NCCL "Also verify the NCCL transport" OFF)
+option(ENABLE_NVSHMEM "Also verify the NVSHMEM transport" OFF)
 
 if(ENABLE_CUDA)
     enable_language(CUDA)
@@ -47,4 +47,4 @@ foreach(example domain_decomposition halo_exchange particle_migration getting_st
     endforeach()
 endforeach()
 
-add_subdirectory(correctness_checks)
+add_subdirectory(verify_installation)

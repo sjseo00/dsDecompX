@@ -2,7 +2,7 @@
 
 This folder has three kinds of programs. Install dsDecompX first (see `docs/02_Installation.md`); every program here is built against the installed library.
 
-## 1. Small examples and tests (CPU, a few seconds)
+## 1. Small examples and correctness checks (CPU, a few seconds)
 
 Start here. These programs run on a laptop with any MPI and use one particle per rank, so the output is easy to check.
 
@@ -13,18 +13,18 @@ Start here. These programs run on a laptop with any MPI and use one particle per
 | [`domain_decomposition`](domain_decomposition/) | The process grid, the coordinate of each rank, and its neighbors | `rank 0 grid 2x1x1 coordinate 0,0,0 neighbors 2` |
 | [`halo_exchange`](halo_exchange/) | A halo exchange: how many ghost particles each rank receives | `rank 0 received 1 ghosts` |
 | [`particle_migration`](particle_migration/) | Migration: a particle that left its subdomain moves to its new owner | `rank 0 now owns 1 particles` |
-| [`tests`](tests/) | Automatic checks of the library (see [`tests/README.md`](tests/README.md)) | `ctest` reports passed or failed |
+| [`correctness_checks`](correctness_checks/) | Automatic checks that the library returns correct results: process-grid selection, backend names, and migration, halo exchange, and reverse exchange on several ranks (see [`correctness_checks/README.md`](correctness_checks/README.md)) | `ctest` reports passed or failed |
 
-Build and run all of them, including the tests:
+Build and run all of them, including the correctness checks:
 
 ```sh
 cmake -S . -B build -DCMAKE_PREFIX_PATH=<dsDecompX install>
 cmake --build build -j
-ctest --test-dir build --output-on-failure        # 20 tests on 1, 2, and 4 ranks
+ctest --test-dir build --output-on-failure        # 20 runs on 1, 2, and 4 ranks
 mpiexec -n 2 build/dsdecompx_getting_started      # run one example by hand
 ```
 
-Run the commands in this folder. The CUDA tests are off by default; see [`tests/README.md`](tests/README.md).
+Run the commands in this folder. The CUDA checks are off by default; see [`correctness_checks/README.md`](correctness_checks/README.md).
 
 ## 2. Application comparison (the paper, Section 4.3)
 

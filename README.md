@@ -72,9 +72,9 @@ MPI_Finalize();
 
 A complete, runnable program is in [docs/03_First_Program.md](docs/03_First_Program.md).
 
-## Examples and tests
+## Examples and correctness checks
 
-Small examples, automatic tests, and the programs of the dsDecompX paper are in [examples/](examples/README.md). To check an installation, build that folder against it and run `ctest`.
+Small examples, automatic correctness checks, and the programs of the dsDecompX paper are in [examples/](examples/README.md). To check an installation, build that folder against it and run `ctest`.
 
 ## Documentation
 

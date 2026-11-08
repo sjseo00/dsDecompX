@@ -1,4 +1,4 @@
-# CUDA tests
+# CUDA correctness checks
 
 Three programs check the CUDA path with two MPI ranks, once for each transport (`mpi`, and `nccl` or `nvshmem` when enabled):
 

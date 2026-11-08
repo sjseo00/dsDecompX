@@ -1,4 +1,4 @@
-# Verify your installation
+# Sanity check of your installation
 
 Run these programs after you install dsDecompX to confirm that your build works with your MPI (and your GPUs, for a CUDA build). They are built and registered with CTest by [`../CMakeLists.txt`](../CMakeLists.txt), so build the examples as described in [`../README.md`](../README.md) and run:
 
@@ -28,4 +28,4 @@ The programs in [`cuda/`](cuda/) confirm that the GPU path works with two ranks 
 cmake -S . -B build -DCMAKE_PREFIX_PATH=<dsDecompX install> -DENABLE_CUDA=ON -DRUN_GPU_TESTS=ON
 ```
 
-Add `-DENABLE_NCCL=ON` or `-DENABLE_NVSHMEM=ON` to verify these transports as well (the installed dsDecompX must include them).
+Add `-DENABLE_NCCL=ON` or `-DENABLE_NVSHMEM=ON` to check these transports as well (the installed dsDecompX must include them).

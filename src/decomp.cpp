@@ -102,6 +102,11 @@ const GlobalDomain& Decomposition::global_domain() const noexcept {
 }
 
 void Decomposition::update_domain(const GlobalDomain& domain) {
+    rescale_domain(domain);
+    invalidate_halo_plan();
+}
+
+void Decomposition::rescale_domain(const GlobalDomain& domain) {
     if (domain.periodic != impl_->config.domain.periodic) {
         throw std::invalid_argument(
             "dsDecompX: changing periodicity after topology creation requires reconstructing Decomp");
@@ -117,8 +122,25 @@ void Decomposition::update_domain(const GlobalDomain& domain) {
         }
     }
     impl_->config.domain = domain;
+    // refresh_domain_geometry() marks the halo plan invalid; here the plan stays (same grid, same neighbors in the
+    // same order), so its state is put back afterwards.
+    const std::size_t neighbor_count = impl_->topology.neighbors().size();
+    const bool plan_valid = impl_->halo_plan_valid;
+#if HAS_CUDA
+    const bool device_plan_valid = impl_->device_halo_plan_valid;
+#endif
     impl_->refresh_domain_geometry();
-    invalidate_halo_plan();
+    const auto& neighbors = impl_->topology.neighbors();
+    if (neighbors.size() != neighbor_count) return;   // cannot happen with an unchanged grid; the plan stays invalid
+    impl_->halo_plan_valid = plan_valid;
+#if HAS_CUDA
+    impl_->device_halo_plan_valid = device_plan_valid;
+#endif
+    // The host plan keeps a copy of each neighbor's shift (the CUDA path reads the topology's neighbors at every
+    // exchange).
+    for (std::size_t n = 0; n < neighbors.size() && n < impl_->halo_plan.size(); ++n) {
+        impl_->halo_plan[n].periodic_shift = neighbors[n].periodic_shift;
+    }
 }
 
 void Decomposition::set_axis_cuts(

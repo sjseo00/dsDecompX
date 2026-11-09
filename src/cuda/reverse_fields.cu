@@ -118,14 +118,18 @@ __device__ inline void reduce_components(void* data, const unsigned char* field_
                                          int op) {
     T* out = static_cast<T*>(data) + owner * components;
     const T* in = reinterpret_cast<const T*>(field_bytes);
-    for (unsigned int c = 0; c < components; ++c) reduce_value(out + c, in[c], op);
+    // the threads of the block walk over the components: a wide field (a node feature vector of thousands of values) is read and
+    // reduced coalesced, as in gather_fields_kernel
+    for (unsigned int c = threadIdx.x; c < components; c += blockDim.x) reduce_value(out + c, in[c], op);
 }
 
+// One block per record (like gather_fields_kernel): with one thread per record a field of 2048 values per particle was walked by a
+// single thread, 250-300 us per launch, and the reverse exchange was most of the GPU time of a layer-exchange MLIP step.
 __global__ void pack_reverse_fields_kernel(DeviceReverseFields fields,
                                            std::size_t ghost_offset,
                                            std::size_t count,
                                            unsigned char* output) {
-    const std::size_t k = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    const std::size_t k = blockIdx.x;
     if (k >= count) return;
     const std::size_t ghost = ghost_offset + k;
     unsigned char* record = output + k * fields.stride;
@@ -133,7 +137,7 @@ __global__ void pack_reverse_fields_kernel(DeviceReverseFields fields,
         const unsigned int* source =
             static_cast<const unsigned int*>(fields.data[f]) + ghost * fields.words[f];
         unsigned int* target = reinterpret_cast<unsigned int*>(record + fields.offset[f]);
-        for (unsigned int w = 0; w < fields.words[f]; ++w) target[w] = source[w];
+        for (unsigned int w = threadIdx.x; w < fields.words[f]; w += blockDim.x) target[w] = source[w];
     }
 }
 
@@ -143,7 +147,7 @@ __global__ void reduce_reverse_fields_kernel(DeviceReverseFields fields,
                                              const unsigned char* records,
                                              std::size_t count,
                                              const unsigned int* sources) {
-    const std::size_t k = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    const std::size_t k = blockIdx.x;
     if (k >= count) return;
     const unsigned char* record = records + k * fields.stride;
     const std::size_t owner = sources[k];
@@ -224,9 +228,7 @@ void launch_pack_reverse_fields(const ReverseFields& fields,
                                 std::size_t ghost_offset, std::size_t count,
                                 unsigned char* output, cudaStream_t stream) {
     if (!count || !fields.count) return;
-    constexpr int threads = 256;
-    pack_reverse_fields_kernel<<<static_cast<unsigned>((count + threads - 1) / threads),
-                                 threads, 0, stream>>>(
+    pack_reverse_fields_kernel<<<static_cast<unsigned>(count), 128, 0, stream>>>(
         to_device(fields), ghost_offset, count, output);
     detail::check(cudaGetLastError(), "launch reverse field pack kernel");
 }
@@ -235,9 +237,7 @@ void launch_reduce_reverse_fields(const ReverseFields& fields,
                                   const unsigned char* records, std::size_t count,
                                   const unsigned int* sources, cudaStream_t stream) {
     if (!count || !fields.count) return;
-    constexpr int threads = 256;
-    reduce_reverse_fields_kernel<<<static_cast<unsigned>((count + threads - 1) / threads),
-                                   threads, 0, stream>>>(
+    reduce_reverse_fields_kernel<<<static_cast<unsigned>(count), 128, 0, stream>>>(
         to_device(fields), records, count, sources);
     detail::check(cudaGetLastError(), "launch reverse field reduce kernel");
 }

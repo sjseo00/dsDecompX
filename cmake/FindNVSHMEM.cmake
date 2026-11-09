@@ -6,9 +6,11 @@
 #   NVIDIA HPC SDK:  $NVHPC_ROOT/comm_libs/nvshmem
 #   CUDA toolkit:    -DCUDAToolkit_ROOT, env CUDA_HOME / CUDA_PATH
 #   system paths (distro packages: include/nvshmem_12, lib/nvshmem/12)
-# Only the host library is linked: dsDecompX calls host/on-stream APIs from
-# plain C++ and has no device-side NVSHMEM code. Both libnvshmem_host.so and a
-# runtime-only libnvshmem_host.so.3 are accepted.
+# dsDecompX calls host/on-stream APIs from plain C++ and has no device-side
+# NVSHMEM code. Both libnvshmem_host.so and a runtime-only libnvshmem_host.so.3
+# are accepted. libnvshmem_device.a is linked too when it exists: the inline
+# nvshmemx_init_attr()/nvshmem_finalize() in the headers call nvshmemi_init_thread()
+# and nvshmemi_finalize(), which newer NVSHMEM exports only from that archive.
 
 set(_dsdx_nvshmem_hints "${NVSHMEM_ROOT}")
 foreach(_v NVSHMEM_ROOT NVSHMEM_HOME NVSHMEM_DIR NVSHMEM_PATH CUDA_HOME CUDA_PATH CUDAToolkit_ROOT)
@@ -49,6 +51,12 @@ find_library(NVSHMEM_HOST_LIBRARY
                   lib/x86_64-linux-gnu lib/x86_64-linux-gnu/nvshmem/12
                   lib/aarch64-linux-gnu lib/aarch64-linux-gnu/nvshmem/12)
 
+get_filename_component(_dsdx_nvshmem_libdir "${NVSHMEM_HOST_LIBRARY}" DIRECTORY)
+find_library(NVSHMEM_DEVICE_LIBRARY
+    NAMES libnvshmem_device.a
+    HINTS "${_dsdx_nvshmem_libdir}" ${_dsdx_nvshmem_hints}
+    PATH_SUFFIXES lib lib64 lib/nvshmem/12 lib/nvshmem/13)
+
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(NVSHMEM
     REQUIRED_VARS NVSHMEM_INCLUDE_DIR NVSHMEM_HOST_LIBRARY
@@ -60,6 +68,10 @@ if(NVSHMEM_FOUND AND NOT TARGET NVSHMEM::NVSHMEM)
     set_target_properties(NVSHMEM::NVSHMEM PROPERTIES
         IMPORTED_LOCATION "${NVSHMEM_HOST_LIBRARY}"
         INTERFACE_INCLUDE_DIRECTORIES "${NVSHMEM_INCLUDE_DIR}")
+    if(NVSHMEM_DEVICE_LIBRARY)
+        set_target_properties(NVSHMEM::NVSHMEM PROPERTIES
+            INTERFACE_LINK_LIBRARIES "${NVSHMEM_DEVICE_LIBRARY}")
+    endif()
 endif()
 
-mark_as_advanced(NVSHMEM_INCLUDE_DIR NVSHMEM_HOST_LIBRARY)
+mark_as_advanced(NVSHMEM_INCLUDE_DIR NVSHMEM_HOST_LIBRARY NVSHMEM_DEVICE_LIBRARY)

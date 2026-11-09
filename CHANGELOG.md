@@ -2,6 +2,10 @@
 
 ## 1.0.0
 
+- Added `Decomp::rescale_domain()` (and `Decomposition::rescale_domain()`): the box change of `update_domain()` without
+  dropping the halo plan. Between plan rebuilds the ghosts of a periodic face are then placed with the image shift of the
+  current box; after `update_domain()` + a reused plan they kept the shift of the box of the last plan build, which put
+  them off by the box change since then (NPT on several ranks). Defined as `DSDECOMPX_RESCALE_DOMAIN`.
 - A host-memory halo exchange on a reused plan (`exchange_halo(particles, {rebuild = false})`) now refreshes the ghosts' velocities
   together with their positions; it used to leave them at the values of the last plan build. Defined as
   `DSDECOMPX_HOST_HALO_REFRESHES_VELOCITY` in `dsdecompx.hpp` (DeepScaleMD's CPU constraint solver needs it).

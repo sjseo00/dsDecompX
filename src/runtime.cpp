@@ -844,6 +844,10 @@ void Decomp::update_domain(const GlobalDomain& domain) {
     impl_->decomposition->update_domain(domain);
 }
 
+void Decomp::rescale_domain(const GlobalDomain& domain) {
+    impl_->decomposition->rescale_domain(domain);
+}
+
 void Decomp::set_halo_width(double width) {
     impl_->decomposition->set_halo_width(width);
     impl_->halo_width = width;

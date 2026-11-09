@@ -93,6 +93,12 @@ public:
     const GlobalDomain& global_domain() const noexcept;
 
     void update_domain(const GlobalDomain& domain);
+    // The same box change as update_domain() (the subdomain cuts scale with the box), but the halo plan is kept.
+    // The atoms of the halo slabs scale with the box too, so between plan rebuilds only the periodic image shift
+    // of the ghosts changes: the next refresh of the plan places them with the shift of the new box (after
+    // update_domain() they kept the shift of the box of the last plan build). For a barostat step that does not
+    // rebuild the plan. The periodicity must not change.
+    void rescale_domain(const GlobalDomain& domain);
     void set_halo_width(double width);
     void set_axis_cuts(const std::array<std::vector<double>, 3>& cuts);
     GridPolicy grid_policy() const noexcept;

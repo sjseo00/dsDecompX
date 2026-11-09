@@ -41,6 +41,8 @@ struct HaloExchangeOptions {
 #define DSDECOMPX_HALO_POSITIONS_ONLY 1
 // Defined when a host-memory halo refresh (exchange_halo on a reused plan) also refreshes the ghosts' velocities.
 #define DSDECOMPX_HOST_HALO_REFRESHES_VELOCITY 1
+// Defined when Decomp has rescale_domain().
+#define DSDECOMPX_RESCALE_DOMAIN 1
 // Where the translation unit that includes this header found it (to diagnose mixed installs).
 inline const char* header_path() noexcept { return __FILE__; }
 
@@ -188,6 +190,9 @@ public:
     bool has_out_of_domain_particles(const ParticleInfo& particles) const;
 
     void update_domain(const GlobalDomain& domain);
+    // update_domain() without dropping the halo plan: between plan rebuilds the ghosts get the periodic image shift
+    // of the new box (DSDECOMPX_RESCALE_DOMAIN). For a small box change such as one barostat step.
+    void rescale_domain(const GlobalDomain& domain);
     void set_halo_width(double width);
     double halo_width() const noexcept;
     void invalidate_halo() noexcept;

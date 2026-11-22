@@ -1,4 +1,4 @@
-# Molecular dynamics (Lennard-Jones fluid) -- dsDecompX, Cabana, and AMReX
+# Molecular dynamics
 
 One program for each library, with the same physics, the same initial state, the same neighbor list, and the same force. They differ only in
 how the particles are stored and in the communication: migration of particles to their new owners and exchange of the ghost (halo) particles.

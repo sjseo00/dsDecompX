@@ -10,7 +10,7 @@ All tests should pass. A failed test means that the installation, the MPI librar
 
 The programs use `assert`. The build keeps assertions switched on in every build type, so a Release build checks as much as a Debug build.
 
-## CPU (no GPU needed)
+## CPU
 
 | CTest name | File | What it confirms |
 |---|---|---|
@@ -20,7 +20,7 @@ The programs use `assert`. The build keeps assertions switched on in every build
 
 The small examples in `..` are also registered with CTest (`dsdecompx.example.<name>.<ranks>`); they must run without an error on 1, 2, and 4 ranks.
 
-## CUDA (need GPUs)
+## CUDA
 
 The programs in [`cuda/`](cuda/) confirm that the GPU path works with two ranks and are described in [`cuda/README.md`](cuda/README.md). They are off by default. dsDecompX must be built with CUDA, and you configure the examples with
 

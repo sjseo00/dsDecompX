@@ -1,40 +1,48 @@
 # dsDecompX examples
 
-This folder has three kinds of programs. Install dsDecompX first (see `docs/02_Installation.md`); every program here is built against the installed library.
+Every program in this folder is built against an installed dsDecompX. Install it first as described in
+[docs/02_Installation.md](../docs/02_Installation.md).
 
-## 1. Small examples and a sanity check of your installation (CPU, a few seconds)
+## Small examples
 
-Start here. These programs run on a laptop with any MPI and use one particle per rank, so the output is easy to check.
+These programs run on any computer with MPI. Each rank has one particle, so the output is easy to check.
 
-| Folder | What it shows | Output on 2 ranks |
+| Folder | What it does | Output on 2 ranks |
 |---|---|---|
-| [`getting_started`](getting_started/) | The complete example of the paper (Section 3): migrate, build the halo, add the ghosts' forces back to their owners with `reverse_halo` | `rank 0 ghosts=1 returned_fx=1` (one line per rank) |
-| [`registered_field`](registered_field/) | The same, with an application field registered by `add_field` and returned by `reverse_exchange` | like the one above; the program asserts the result |
-| [`domain_decomposition`](domain_decomposition/) | The process grid, the coordinate of each rank, and its neighbors | `rank 0 grid 2x1x1 coordinate 0,0,0 neighbors 2` |
-| [`halo_exchange`](halo_exchange/) | A halo exchange: how many ghost particles each rank receives | `rank 0 received 1 ghosts` |
-| [`particle_migration`](particle_migration/) | Migration: a particle that left its subdomain moves to its new owner | `rank 0 now owns 1 particles` |
-| [`sanity_check`](sanity_check/) | Run after you install dsDecompX: programs that confirm that your build works (process-grid selection, backend names, and migration, halo exchange, and reverse exchange on several ranks); see [`sanity_check/README.md`](sanity_check/README.md) | `ctest` reports passed or failed |
+| [`getting_started`](getting_started/) | Migrates particles, builds the halo, and returns the forces of the ghosts to their owners with `reverse_halo`. This is the example in the dsDecompX paper | `rank 0 ghosts=1 returned_fx=1` |
+| [`registered_field`](registered_field/) | The same with an application field, registered with `add_field` and returned with `reverse_exchange` | the same as above |
+| [`domain_decomposition`](domain_decomposition/) | Prints the process grid, the coordinate of each rank, and its neighbors | `rank 0 grid 2x1x1 coordinate 0,0,0 neighbors 2` |
+| [`halo_exchange`](halo_exchange/) | Prints how many ghost particles each rank receives | `rank 0 received 1 ghosts` |
+| [`particle_migration`](particle_migration/) | Moves a particle that left its subdomain to its new owner | `rank 0 now owns 1 particles` |
 
-Build and run all of them, including the sanity check of your installation:
+Each rank prints one line.
+
+## Sanity check
+
+[`sanity_check`](sanity_check/) checks that an installation works: process-grid selection, backend names, and migration,
+halo exchange, and reverse exchange on several ranks. The CUDA tests are off by default. See
+[sanity_check/README.md](sanity_check/README.md).
+
+## Build and run
+
+Run these commands in this folder:
 
 ```sh
 cmake -S . -B build -DCMAKE_PREFIX_PATH=<dsDecompX install>
 cmake --build build -j
-ctest --test-dir build --output-on-failure        # 20 runs on 1, 2, and 4 ranks
-mpiexec -n 2 build/dsdecompx_getting_started      # run one example by hand
+ctest --test-dir build --output-on-failure        # 20 tests on 1, 2, and 4 ranks
+mpiexec -n 2 build/dsdecompx_getting_started      # one example
 ```
 
-Run the commands in this folder. The CUDA part of the sanity check is off by default; see [`sanity_check/README.md`](sanity_check/README.md).
+## Programs of the dsDecompX paper
 
-## 2. Application comparison (the paper, Section 4.3)
+These programs produced the results of the paper. They need CUDA and MPI. Each folder has a README with the build and
+run commands.
 
-[`applications`](applications/) has three applications (molecular dynamics, discrete element method, and smoothed particle hydrodynamics). Each solves the same problem with dsDecompX, Cabana, and AMReX, so the step time of the three libraries can be compared. It needs CUDA, MPI, and the other libraries. Each folder has its own README.
-
-## 3. Measurements of dsDecompX itself (the paper, Sections 4.2 and 4.4)
-
-| Folder | What it measures |
+| Folder | What it does |
 |---|---|
-| [`communication_test`](communication_test/) | The time of each dsDecompX operation (migration, halo rebuild, halo refresh, reverse reduction) with a fixed number of particles per rank, while the number of ranks increases |
-| [`load_balancing`](load_balancing/) | The effect of dynamic subdomain boundaries (`GridPolicy::Dynamic`) on a clustered particle distribution that moves through the box |
+| [`applications`](applications/) | Molecular dynamics, discrete element method, and smoothed particle hydrodynamics. Each solves the same problem with dsDecompX, Cabana, and AMReX |
+| [`communication_test`](communication_test/) | Measures the time of migration, halo rebuild, halo refresh, and reverse exchange with a fixed number of particles per rank |
+| [`load_balancing`](load_balancing/) | Compares fixed and dynamic subdomain boundaries for a cluster of particles that moves through the box |
 
-Both need CUDA and MPI (the CPU runs use the same program with `gpu=0`). Each folder has its own README with the build and run commands.
+`communication_test` and `load_balancing` run on the CPU with `gpu=0`.

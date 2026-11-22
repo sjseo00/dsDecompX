@@ -76,6 +76,39 @@ A complete, runnable program is in [docs/03_First_Program.md](docs/03_First_Prog
 
 Small examples, a sanity check of your installation, and the programs of the dsDecompX paper are in [examples/](examples/README.md). To confirm that an installation works, build that folder against it and run `ctest`.
 
+## Directory structure
+
+| Path | Contents |
+|---|---|
+| `CMakeLists.txt` | Build and install of the library (options `ENABLE_CUDA`, `ENABLE_NCCL`, `ENABLE_NVSHMEM`) |
+| `VERSION`, `CHANGELOG.md` | Version number and list of changes |
+| `LICENSE` | GNU General Public License version 3 |
+| `CONTRIBUTING.md` | Notes for contributors |
+| `README.md`, `README.ko.md` | This file, and a short version in Korean |
+| `cmake/` | `dsDecompXConfig.cmake.in` for `find_package(dsDecompX)`, and `FindNCCL.cmake`, `FindNVSHMEM.cmake` |
+| `include/` | Public headers. Applications include only `dsdecompx.hpp` |
+| `include/dsdecompx.hpp` | Main entry header: `Decomp`, `ParticleInfo`, and the communication functions |
+| `include/config.hpp`, `domain.hpp`, `grid.hpp` | `Config`, the global and local domain, the halo width, and the process-grid policies (`Manual`, `Balanced`, `TopologyAware`, `Dynamic`) |
+| `include/field.hpp` | Application-defined per-particle fields (`add_field`) |
+| `include/topology.hpp` | Cartesian process grid and neighbor ranks |
+| `include/decomposition.hpp`, `halo.hpp`, `migration.hpp` | Internal decomposition class, halo plan, and device buffers used by the library |
+| `include/backend.hpp`, `backend_selection.hpp`, `backends/` | Communication backend interface and selection; MPI, NCCL, and NVSHMEM backends |
+| `include/perf.hpp`, `performance.hpp` | Optional performance counters |
+| `include/version.hpp` | Version constants |
+| `src/` | Library sources |
+| `src/runtime.cpp`, `decomp.cpp`, `topology.cpp`, `grid.cpp` | Set-up, process grid, neighbor ranks, and dynamic boundary adjustment |
+| `src/migration.cpp`, `halo.cpp`, `buffer.cpp`, `device_fields.cpp` | Particle migration, halo exchange and reverse exchange, communication buffers, and field packing |
+| `src/backend_selection.cpp`, `src/backends/` | Backend selection; MPI, NCCL, and NVSHMEM transfer code |
+| `src/cuda/` | CUDA path: classification, packing, unpacking, and reduction kernels, device buffers, and events |
+| `src/internal/` | Internal headers not installed |
+| `docs/` | User manual: overview, installation, first program, use in an application, API reference, recipes |
+| `examples/` | Example programs built against an installed dsDecompX; see [examples/README.md](examples/README.md) |
+| `examples/getting_started`, `registered_field`, `domain_decomposition`, `halo_exchange`, `particle_migration` | Small CPU examples (the complete example of the paper is `getting_started`) |
+| `examples/sanity_check/` | Unit tests, an MPI regression test, and optional CUDA tests, run with `ctest` |
+| `examples/applications/` | MD, DEM, and SPH applications with dsDecompX, Cabana, and AMReX (paper, Section 4.3) |
+| `examples/communication_test/` | Communication test with a fixed number of particles per rank (paper, Section 4.2) |
+| `examples/load_balancing/` | Dynamic load balancing with a moving particle cluster (paper, Section 4.4) |
+
 ## Documentation
 
 
@@ -89,8 +122,7 @@ Small examples, a sanity check of your installation, and the programs of the dsD
 | [Recipes](docs/06_Recipes.md)                          | MD, per-layer feature exchange, DEM, SPH, particle tracking           |
 
 
-##   
-License
+## License
 
 GPL-3.0-only; see [LICENSE](LICENSE).
 
